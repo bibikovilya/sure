@@ -23,6 +23,7 @@ module ImportsHelper
       exchange: "Exchange",
       price: "Price",
       entity_type: "Type",
+      opening_date: "Opening Date",
       category_parent: "Parent category",
       category_color: "Color",
       category_classification: "Classification",

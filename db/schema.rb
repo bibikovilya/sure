@@ -374,6 +374,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
     t.string "category_color"
     t.string "category_classification"
     t.string "category_icon"
+    t.string "opening_date"
     t.index ["import_id"], name: "index_import_rows_on_import_id"
   end
 
@@ -407,6 +408,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
     t.string "exchange_operating_mic_col_label"
     t.string "amount_type_strategy", default: "signed_amount"
     t.string "amount_type_inflow_value"
+    t.string "opening_date_col_label"
     t.index ["family_id"], name: "index_imports_on_family_id"
   end
 
