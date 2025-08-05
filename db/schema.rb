@@ -10,7 +10,6 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-
 ActiveRecord::Schema[7.2].define(version: 2025_11_11_094448) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
@@ -371,11 +370,11 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_11_094448) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "exchange_operating_mic"
-    t.string "opening_date"
     t.string "category_parent"
     t.string "category_color"
     t.string "category_classification"
     t.string "category_icon"
+    t.string "opening_date"
     t.index ["import_id"], name: "index_import_rows_on_import_id"
   end
 
