@@ -10,6 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
+
 ActiveRecord::Schema[7.2].define(version: 2025_11_11_094448) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
@@ -370,6 +371,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_11_094448) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "exchange_operating_mic"
+    t.string "opening_date"
     t.string "category_parent"
     t.string "category_color"
     t.string "category_classification"
@@ -407,6 +409,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_11_094448) do
     t.string "exchange_operating_mic_col_label"
     t.string "amount_type_strategy", default: "signed_amount"
     t.string "amount_type_inflow_value"
+    t.string "opening_date_col_label"
     t.index ["family_id"], name: "index_imports_on_family_id"
   end
 
