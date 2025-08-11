@@ -15,11 +15,23 @@ class Account::MarketDataImporterTest < ActiveSupport::TestCase
     Security.delete_all
     Entry.delete_all
 
-    @provider = mock("provider")
+    ENV["EXCHANGE_RATE_PROVIDER"] = "nbrb"
+
+    @exchange_rate_provider = mock("provider")
+    @security_provider = mock("security_provider")
+    Provider::Registry.any_instance
+                      .stubs(:get_provider)
+                      .with(:nbrb)
+                      .returns(@exchange_rate_provider)
     Provider::Registry.any_instance
                       .stubs(:get_provider)
                       .with(:twelve_data)
-                      .returns(@provider)
+                      .returns(@security_provider)
+  end
+
+  teardown do
+    # Clean up the environment variable
+    ENV.delete("EXCHANGE_RATE_PROVIDER")
   end
 
   test "syncs required exchange rates for a foreign-currency account" do
@@ -40,14 +52,14 @@ class Account::MarketDataImporterTest < ActiveSupport::TestCase
     expected_start_date = (existing_date + 1.day) - PROVIDER_BUFFER
     end_date            = Date.current.in_time_zone("America/New_York").to_date
 
-    @provider.expects(:fetch_exchange_rates)
-             .with(from: "CAD",
-                   to: "USD",
-                   start_date: expected_start_date,
-                   end_date: end_date)
-             .returns(provider_success_response([
-               OpenStruct.new(from: "CAD", to: "USD", date: existing_date, rate: 1.5)
-             ]))
+    @exchange_rate_provider.expects(:fetch_exchange_rates)
+                           .with(from: "CAD",
+                                 to: "USD",
+                                 start_date: expected_start_date,
+                                 end_date: end_date)
+                           .returns(provider_success_response([
+                             OpenStruct.new(from: "CAD", to: "USD", date: existing_date, rate: 1.5)
+                           ]))
 
     @provider.expects(:fetch_exchange_rates)
              .with(from: "USD",
@@ -91,7 +103,7 @@ class Account::MarketDataImporterTest < ActiveSupport::TestCase
     expected_start_date = trade_date - PROVIDER_BUFFER
     end_date            = Date.current.in_time_zone("America/New_York").to_date
 
-    @provider.expects(:fetch_security_prices)
+    @security_provider.expects(:fetch_security_prices)
              .with(symbol: security.ticker,
                    exchange_operating_mic: security.exchange_operating_mic,
                    start_date: expected_start_date,
@@ -103,12 +115,12 @@ class Account::MarketDataImporterTest < ActiveSupport::TestCase
                               currency: "USD")
              ]))
 
-    @provider.stubs(:fetch_security_info)
+    @security_provider.stubs(:fetch_security_info)
              .with(symbol: security.ticker, exchange_operating_mic: security.exchange_operating_mic)
              .returns(provider_success_response(OpenStruct.new(name: "Apple", logo_url: "logo")))
 
     # Ignore exchange-rate calls for this test
-    @provider.stubs(:fetch_exchange_rates).returns(provider_success_response([]))
+    @exchange_rate_provider.stubs(:fetch_exchange_rates).returns(provider_success_response([]))
 
     Account::MarketDataImporter.new(account).import_all
 
@@ -142,21 +154,21 @@ class Account::MarketDataImporterTest < ActiveSupport::TestCase
     end_date            = Date.current.in_time_zone("America/New_York").to_date
 
     # Simulate provider returning an error response
-    @provider.expects(:fetch_security_prices)
-             .with(symbol: security.ticker,
-                   exchange_operating_mic: security.exchange_operating_mic,
-                   start_date: expected_start_date,
-                   end_date: end_date)
-             .returns(provider_error_response(
-               Provider::TwelveData::Error.new("Invalid symbol", details: { code: 400, message: "Invalid symbol" })
-             ))
+    @security_provider.expects(:fetch_security_prices)
+                      .with(symbol: security.ticker,
+                            exchange_operating_mic: security.exchange_operating_mic,
+                            start_date: expected_start_date,
+                            end_date: end_date)
+                      .returns(provider_error_response(
+                        Provider::TwelveData::Error.new("Invalid symbol", details: { code: 400, message: "Invalid symbol" })
+                      ))
 
-    @provider.stubs(:fetch_security_info)
-             .with(symbol: security.ticker, exchange_operating_mic: security.exchange_operating_mic)
-             .returns(provider_success_response(OpenStruct.new(name: "Invalid Co", logo_url: "logo")))
+    @security_provider.stubs(:fetch_security_info)
+                      .with(symbol: security.ticker, exchange_operating_mic: security.exchange_operating_mic)
+                      .returns(provider_success_response(OpenStruct.new(name: "Invalid Co", logo_url: "logo")))
 
     # Ignore exchange-rate calls for this test
-    @provider.stubs(:fetch_exchange_rates).returns(provider_success_response([]))
+    @exchange_rate_provider.stubs(:fetch_exchange_rates).returns(provider_success_response([]))
 
     # Should not raise an error, just log and continue
     assert_nothing_raised do
@@ -185,14 +197,14 @@ class Account::MarketDataImporterTest < ActiveSupport::TestCase
     end_date            = Date.current.in_time_zone("America/New_York").to_date
 
     # Simulate provider returning an error response
-    @provider.expects(:fetch_exchange_rates)
-             .with(from: "CAD",
-                   to: "USD",
-                   start_date: expected_start_date,
-                   end_date: end_date)
-             .returns(provider_error_response(
-               Provider::TwelveData::Error.new("Rate limit exceeded", details: { code: 429, message: "Rate limit exceeded" })
-             ))
+    @exchange_rate_provider.expects(:fetch_exchange_rates)
+                           .with(from: "CAD",
+                                 to: "USD",
+                                 start_date: expected_start_date,
+                                 end_date: end_date)
+                           .returns(provider_error_response(
+                             Provider::TwelveData::Error.new("Rate limit exceeded", details: { code: 429, message: "Rate limit exceeded" })
+                           ))
 
     @provider.expects(:fetch_exchange_rates)
              .with(from: "USD",

@@ -20,10 +20,6 @@ de:
         title: Self-Hosting
         danger_zone: Gefahrenbereich
         clear_cache: Daten-Cache leeren
-        clear_cache_warning: Das Leeren des Daten-Caches entfernt alle Wechselkurse, Wertpapierpreise, Kontostände und andere zwischengespeicherte Daten. Dies löscht keine Konten, Transaktionen, Kategorien oder andere benutzereigenen Daten.
-        confirm_clear_cache:
-          title: Daten-Cache leeren?
-          body: Bist du sicher, dass du den Daten-Cache leeren möchtest? Dadurch werden alle Wechselkurse, Wertpapierpreise, Kontostände und andere Daten entfernt. Diese Aktion kann nicht rückgängig gemacht werden.
       brand_fetch_settings:
         description: Gib die von Brand Fetch bereitgestellte Client-ID ein.
         label: Client-ID
@@ -54,6 +50,13 @@ de:
         placeholder: Gib hier deinen API-Schlüssel ein
         plan: "%{plan}-Tarif"
         title: Twelve Data
+      nbrb_settings:
+        title: NBRB
+        description: Die Nationalbank der Republik Belarus (NBRB) ist die einzige genaue Quelle für BYN-Wechselkurse und bietet kostenlosen Zugriff ohne API-Schlüssel.
+        status_active: NBRB ist aktiv und funktionsfähig
+        status_inactive: Verbindung zu NBRB fehlgeschlagen
+        connection_failed: Verbindung zu NBRB konnte nicht hergestellt werden
+        troubleshooting: Überprüfe deine Internetverbindung und Firewall-Einstellungen. NBRB könnte vorübergehend nicht verfügbar sein.
       update:
         failure: Ungültiger Einstellungswert
         success: Einstellungen aktualisiert

@@ -20,12 +20,6 @@ es:
         title: Autoalojamiento
         danger_zone: Zona de Peligro
         clear_cache: Limpiar caché de datos
-        clear_cache_warning: Limpiar la caché de datos eliminará todos los tipos de cambio, precios de valores, 
-          saldos de cuentas y otros datos. Esto no eliminará cuentas, transacciones, categorías u otros datos propiedad del usuario.
-        confirm_clear_cache:
-          title: ¿Limpiar caché de datos?
-          body: ¿Estás seguro de que deseas limpiar la caché de datos? Esto eliminará todos los tipos de cambio, 
-            precios de valores, saldos de cuentas y otros datos. Esta acción no se puede deshacer.
       brand_fetch_settings:
         description: Introduce el ID de Cliente proporcionado por Brand Fetch
         label: ID de Cliente
@@ -56,6 +50,13 @@ es:
         placeholder: Introduce tu clave API aquí
         plan: Plan %{plan}
         title: Twelve Data
+      nbrb_settings:
+        title: NBRB
+        description: El Banco Nacional de la República de Bielorrusia (NBRB) es la única fuente precisa para los tipos de cambio de BYN y proporciona acceso gratuito sin necesidad de una clave API.
+        status_active: NBRB está activo y funcionando
+        status_inactive: La conexión con NBRB falló
+        connection_failed: No se pudo conectar con NBRB
+        troubleshooting: Verifica tu conexión a internet y la configuración del firewall. NBRB puede estar temporalmente no disponible.
       update:
         failure: Valor de configuración inválido
         success: Configuración actualizada

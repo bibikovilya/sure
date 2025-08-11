@@ -30,6 +30,8 @@ class Settings::HostingsController < ApplicationController
     if @show_yahoo_finance_settings
       @yahoo_finance_provider = Provider::Registry.get_provider(:yahoo_finance)
     end
+
+    @nbrb_provider = Provider::Registry.get_provider(:nbrb)
   end
 
   def update

@@ -15,10 +15,6 @@ ca:
         title: Autoallotjament
         danger_zone: Zona perillosa
         clear_cache: Neteja la memòria cau de dades
-        clear_cache_warning: Netejar la memòria cau de dades eliminarà tots els tipus de canvi, preus de valors, saldos de comptes i altres dades. Això no eliminarà comptes, transaccions, categories ni altres dades de l'usuari.
-        confirm_clear_cache:
-          title: Neteja la memòria cau de dades?
-          body: Segur que vols netejar la memòria cau de dades? Això eliminarà tots els tipus de canvi, preus de valors, saldos de comptes i altres dades. Aquesta acció no es pot desfer.
       brand_fetch_settings:
         description: Introdueix el Client ID proporcionat per Brand Fetch
         label: Client ID
@@ -42,10 +38,16 @@ ca:
         placeholder: Introdueix aquí la teva clau API
         plan: Pla %{plan}
         title: Twelve Data
+      nbrb_settings:
+        title: NBRB
+        description: El Banc Nacional de la República de Bielorússia (NBRB) és l'única font precisa per als tipus de canvi de BYN i proporciona accés gratuït sense necessitat de clau API.
+        status_active: NBRB està actiu i funcionant
+        status_inactive: La connexió amb NBRB ha fallat
+        connection_failed: No s'ha pogut connectar amb NBRB
+        troubleshooting: Verifica la teva connexió a internet i la configuració del tallafoc. NBRB pot estar temporalment no disponible.
       update:
         failure: Valor de configuració invàlid
         success: Configuració actualitzada
       clear_cache:
         cache_cleared: La memòria cau de dades s'ha netejat. Això pot trigar uns instants a completar-se.
       not_authorized: No estàs autoritzat/da per realitzar aquesta acció
-
