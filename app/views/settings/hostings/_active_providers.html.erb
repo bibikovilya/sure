@@ -1,0 +1,29 @@
+<div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+  <h3 class="text-sm font-semibold text-gray-900 mb-3"><%= t(".title") %></h3>
+  <div class="space-y-2">
+    <div class="flex items-center justify-between">
+      <span class="text-sm font-medium text-gray-700"><%= t(".exchange_rates") %>:</span>
+      <% if @active_exchange_rate_provider.present? %>
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-sm font-medium bg-green-100 text-green-800">
+          <%= @active_exchange_rate_provider.titleize %>
+        </span>
+      <% else %>
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-sm font-medium bg-gray-100 text-gray-600">
+          <%= t(".none") %>
+        </span>
+      <% end %>
+    </div>
+    <div class="flex items-center justify-between">
+      <span class="text-sm font-medium text-gray-700"><%= t(".securities") %>:</span>
+      <% if @active_security_price_provider.present? %>
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-sm font-medium bg-green-100 text-green-800">
+          <%= @active_security_price_provider.titleize %>
+        </span>
+      <% else %>
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-sm font-medium bg-gray-100 text-gray-600">
+          <%= t(".none") %>
+        </span>
+      <% end %>
+    </div>
+  </div>
+</div>
