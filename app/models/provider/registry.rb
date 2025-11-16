@@ -40,6 +40,10 @@ class Provider::Registry
         Provider::TwelveData.new(api_key)
       end
 
+      def nbrb
+        Provider::Nbrb.new
+      end
+
       def plaid_us
         Provider::PlaidAdapter.ensure_configuration_loaded
         config = Rails.application.config.plaid
@@ -106,7 +110,7 @@ class Provider::Registry
     def available_providers
       case concept
       when :exchange_rates
-        %i[twelve_data yahoo_finance]
+        %i[twelve_data yahoo_finance nbrb]
       when :securities
         %i[twelve_data yahoo_finance]
       when :llm

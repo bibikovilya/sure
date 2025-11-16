@@ -20,6 +20,12 @@ tr:
         title: Kendi Sunucunda Barındırma
         danger_zone: Tehlikeli Bölge
         clear_cache: Veri önbelleğini temizle
+        active_exchange_rate_provider: Aktif Döviz Kuru Sağlayıcısı
+      active_providers:
+        title: Aktif Sağlayıcılar
+        exchange_rates: Döviz Kurları
+        securities: Menkul Kıymetler
+        none: Yok
         clear_cache_warning: Veri önbelleğini temizlemek tüm döviz kurları, menkul kıymet fiyatları, hesap bakiyeleri ve diğer verileri kaldıracaktır. Bu işlem hesapları, işlemleri, kategorileri veya diğer kullanıcıya ait verileri silmez.
         confirm_clear_cache:
           title: Veri önbelleği temizlensin mi?
@@ -45,3 +51,18 @@ tr:
         status_inactive: Yahoo Finance bağlantısı başarısız
         connection_failed: Yahoo Finance'e bağlanılamıyor
         troubleshooting: İnternet bağlantınızı ve güvenlik duvarı ayarlarınızı kontrol edin. Yahoo Finance geçici olarak kullanılamayabilir.
+      twelve_data_settings:
+        api_calls_used: "%{used} / %{limit} API günlük çağrısı kullanıldı (%{percentage})"
+        description: Twelve Data tarafından sağlanan API anahtarını girin
+        env_configured_message: TWELVE_DATA_API_KEY ortam değişkeni aracılığıyla başarıyla yapılandırıldı.
+        label: API Anahtarı
+        placeholder: API anahtarınızı buraya girin
+        plan: "%{plan} planı"
+        title: Twelve Data
+      nbrb_settings:
+        title: NBRB
+        description: Belarus Cumhuriyeti Ulusal Bankası (NBRB), BYN döviz kurları için tek doğru kaynaktır ve API anahtarı gerektirmeden ücretsiz erişim sağlar.
+        status_active: NBRB aktif ve çalışıyor
+        status_inactive: NBRB bağlantısı başarısız
+        connection_failed: NBRB'ye bağlanılamıyor
+        troubleshooting: İnternet bağlantınızı ve güvenlik duvarı ayarlarınızı kontrol edin. NBRB geçici olarak kullanılamayabilir.

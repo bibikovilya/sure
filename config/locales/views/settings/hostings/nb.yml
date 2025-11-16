@@ -21,6 +21,12 @@ nb:
         title: Selvhosting
         danger_zone: Fareområde
         clear_cache: Tøm cache
+        active_exchange_rate_provider: Aktiv Valutakursleverandør
+      active_providers:
+        title: Aktive Leverandører
+        exchange_rates: Valutakurser
+        securities: Verdipapirer
+        none: Ingen
         clear_cache_warning: Tømming av cache vil fjerne alle valutakurser, verdipapirpriser, kontobalanser og andre data. Dette vil ikke slette kontoer, transaksjoner, kategorier eller andre bruker-eide data.
         confirm_clear_cache:
           title: Tøm cache?
@@ -39,4 +45,18 @@ nb:
         status_inactive: Yahoo Finance-tilkobling feilet
         connection_failed: Kunne ikke koble til Yahoo Finance
         troubleshooting: Sjekk internettilkoblingen og brannmurinnstillingene. Yahoo Finance kan være midlertidig utilgjengelig.
-
+      twelve_data_settings:
+        api_calls_used: "%{used} / %{limit} daglige API-kall brukt (%{percentage})"
+        description: Skriv inn API-nøkkelen fra Twelve Data
+        env_configured_message: Vellykket konfigurert via miljøvariabelen TWELVE_DATA_API_KEY.
+        label: API-nøkkel
+        placeholder: Skriv inn API-nøkkelen din her
+        plan: "%{plan}-plan"
+        title: Twelve Data
+      nbrb_settings:
+        title: NBRB
+        description: Nasjonalbanken i Republikken Hviterussland (NBRB) er den eneste nøyaktige kilden for BYN-valutakurser og gir gratis tilgang uten å kreve en API-nøkkel.
+        status_active: NBRB er aktiv og fungerer
+        status_inactive: NBRB-tilkobling feilet
+        connection_failed: Kunne ikke koble til NBRB
+        troubleshooting: Sjekk internettilkoblingen og brannmurinnstillingene. NBRB kan være midlertidig utilgjengelig.
