@@ -26,6 +26,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id", "provider_type"], name: "index_account_providers_on_account_and_provider_type", unique: true
+    t.index ["account_id", "provider_type"], name: "index_account_providers_on_account_id_and_provider_type", unique: true
     t.index ["provider_type", "provider_id"], name: "index_account_providers_on_provider_type_and_provider_id", unique: true
   end
 
@@ -45,6 +46,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
     t.decimal "cash_balance", precision: 19, scale: 4, default: "0.0"
     t.jsonb "locked_attributes", default: {}
     t.string "status", default: "active"
+    t.uuid "prior_account_id"
     t.uuid "simplefin_account_id"
     t.index ["accountable_id", "accountable_type"], name: "index_accounts_on_accountable_id_and_accountable_type"
     t.index ["accountable_type"], name: "index_accounts_on_accountable_type"
@@ -55,6 +57,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
     t.index ["family_id"], name: "index_accounts_on_family_id"
     t.index ["import_id"], name: "index_accounts_on_import_id"
     t.index ["plaid_account_id"], name: "index_accounts_on_plaid_account_id"
+    t.index ["prior_account_id"], name: "index_accounts_on_prior_account_id"
     t.index ["simplefin_account_id"], name: "index_accounts_on_simplefin_account_id"
     t.index ["status"], name: "index_accounts_on_status"
   end
@@ -370,11 +373,11 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "exchange_operating_mic"
+    t.string "opening_date"
     t.string "category_parent"
     t.string "category_color"
     t.string "category_classification"
     t.string "category_icon"
-    t.string "opening_date"
     t.index ["import_id"], name: "index_import_rows_on_import_id"
   end
 
@@ -672,6 +675,22 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
     t.index ["plaid_id"], name: "index_plaid_items_on_plaid_id", unique: true
   end
 
+  create_table "prior_accounts", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.string "account_number"
+    t.string "name", null: false
+    t.string "currency", null: false
+    t.decimal "current_balance", precision: 19, scale: 4
+    t.date "last_statement_date"
+    t.datetime "last_synced_at"
+    t.jsonb "raw_payload", default: {}
+    t.jsonb "raw_transactions_payload", default: {}
+    t.jsonb "sync_metadata", default: {}
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_number"], name: "index_prior_accounts_on_account_number", unique: true, where: "(account_number IS NOT NULL)"
+    t.index ["name"], name: "index_prior_accounts_on_name", unique: true
+  end
+
   create_table "properties", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
@@ -684,7 +703,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
 
   create_table "recurring_transactions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "family_id", null: false
-    t.uuid "merchant_id"
+    t.uuid "merchant_id", null: false
     t.decimal "amount", precision: 19, scale: 4, null: false
     t.string "currency", null: false
     t.integer "expected_day_of_month", null: false
@@ -699,8 +718,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
     t.decimal "expected_amount_min", precision: 19, scale: 4
     t.decimal "expected_amount_max", precision: 19, scale: 4
     t.decimal "expected_amount_avg", precision: 19, scale: 4
-    t.index ["family_id", "merchant_id", "amount", "currency"], name: "idx_recurring_txns_merchant", unique: true, where: "(merchant_id IS NOT NULL)"
-    t.index ["family_id", "name", "amount", "currency"], name: "idx_recurring_txns_name", unique: true, where: "((name IS NOT NULL) AND (merchant_id IS NULL))"
+    t.index ["family_id", "merchant_id", "amount", "currency"], name: "idx_recurring_txns_on_family_merchant_amount_currency", unique: true
     t.index ["family_id", "status"], name: "index_recurring_transactions_on_family_id_and_status"
     t.index ["family_id"], name: "index_recurring_transactions_on_family_id"
     t.index ["merchant_id"], name: "index_recurring_transactions_on_merchant_id"
@@ -1008,10 +1026,11 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
     t.string "subtype"
   end
 
-  add_foreign_key "account_providers", "accounts", on_delete: :cascade
+  add_foreign_key "account_providers", "accounts"
   add_foreign_key "accounts", "families"
   add_foreign_key "accounts", "imports"
   add_foreign_key "accounts", "plaid_accounts"
+  add_foreign_key "accounts", "prior_accounts"
   add_foreign_key "accounts", "simplefin_accounts"
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
@@ -1022,11 +1041,11 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
   add_foreign_key "budgets", "families"
   add_foreign_key "categories", "families"
   add_foreign_key "chats", "users"
-  add_foreign_key "entries", "accounts", on_delete: :cascade
+  add_foreign_key "entries", "accounts"
   add_foreign_key "entries", "imports"
   add_foreign_key "family_exports", "families"
   add_foreign_key "holdings", "account_providers"
-  add_foreign_key "holdings", "accounts", on_delete: :cascade
+  add_foreign_key "holdings", "accounts"
   add_foreign_key "holdings", "securities"
   add_foreign_key "impersonation_session_logs", "impersonation_sessions"
   add_foreign_key "impersonation_sessions", "users", column: "impersonated_id"

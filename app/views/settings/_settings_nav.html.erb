@@ -30,7 +30,9 @@ nav_sections = [
         { label: t(".api_keys_label"), path: settings_api_key_path, icon: "key" },
         { label: t(".self_hosting_label"), path: settings_hosting_path, icon: "database", if: self_hosted? },
         { label: "Providers", path: settings_providers_path, icon: "plug" },
-        { label: t(".imports_label"), path: imports_path, icon: "download" }
+        { label: t(".imports_label"), path: imports_path, icon: "download" },
+        { label: t(".syncs_label"), path: syncs_path, icon: "refresh-cw" },
+        { label: t(".utils_label"), path: settings_utils_path, icon: "wrench" }
       ]
     } : nil
   ),
@@ -39,8 +41,7 @@ nav_sections = [
     items: [
       { label: t(".guides_label"), path: settings_guides_path, icon: "book-open" },
       { label: t(".whats_new_label"), path: changelog_path, icon: "box" },
-      { label: t(".feedback_label"), path: feedback_path, icon: "megaphone" },
-      { label: t(".utils_label"), path: settings_utils_path, icon: "wrench" }
+      { label: t(".feedback_label"), path: feedback_path, icon: "megaphone" }
     ]
   }
 ]
