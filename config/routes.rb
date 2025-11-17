@@ -78,6 +78,9 @@ Rails.application.routes.draw do
     resource :guides, only: :show
     resource :bank_sync, only: :show, controller: "bank_sync"
     resource :providers, only: %i[show update]
+    resource :utils, only: :show do
+      post :fix_encoding, on: :collection
+    end
   end
 
   resource :subscription, only: %i[new show create] do
