@@ -44,6 +44,10 @@ class Provider::Registry
         Provider::Nbrb.new
       end
 
+      def nbrb
+        Provider::Nbrb.new
+      end
+
       def plaid_us
         Provider::PlaidAdapter.ensure_configuration_loaded
         config = Rails.application.config.plaid
