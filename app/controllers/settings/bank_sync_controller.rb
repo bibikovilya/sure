@@ -23,6 +23,13 @@ class Settings::BankSyncController < ApplicationController
         path: "https://beta-bridge.simplefin.org",
         target: "_blank",
         rel: "noopener noreferrer"
+      },
+      {
+        name: "PriorBank",
+        description: "Belarus bank connections via web scraping.",
+        path: "https://priorbank.by",
+        target: "_blank",
+        rel: "noopener noreferrer"
       }
     ]
   end
