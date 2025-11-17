@@ -30,7 +30,6 @@ class Account::MarketDataImporterTest < ActiveSupport::TestCase
   end
 
   teardown do
-    # Clean up the environment variable
     ENV.delete("EXCHANGE_RATE_PROVIDER")
   end
 
