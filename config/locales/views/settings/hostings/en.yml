@@ -17,6 +17,7 @@ en:
       show:
         general: General Settings
         financial_data_providers: Financial Data Providers
+        priorbank: Priorbank Integration
         invites: Invite Codes
         title: Self-Hosting
         danger_zone: Danger Zone
@@ -68,6 +69,14 @@ en:
         status_inactive: NBRB connection failed
         connection_failed: Unable to connect to NBRB
         troubleshooting: Check your internet connection and firewall settings. NBRB may be temporarily unavailable.
+      priorbank_settings:
+        configured: Priorbank credentials are configured and ready to use
+        description: Configure your Priorbank credentials for automatic transaction syncing
+        login_label: Login
+        login_placeholder: Enter your Priorbank login
+        password_label: Password
+        password_placeholder: Enter your Priorbank password
+        title: Priorbank Settings
       update:
         failure: Invalid setting value
         success: Settings updated

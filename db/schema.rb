@@ -46,6 +46,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_11_094448) do
     t.jsonb "locked_attributes", default: {}
     t.string "status", default: "active"
     t.uuid "simplefin_account_id"
+    t.uuid "prior_account_id"
     t.index ["accountable_id", "accountable_type"], name: "index_accounts_on_accountable_id_and_accountable_type"
     t.index ["accountable_type"], name: "index_accounts_on_accountable_type"
     t.index ["currency"], name: "index_accounts_on_currency"
@@ -55,6 +56,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_11_094448) do
     t.index ["family_id"], name: "index_accounts_on_family_id"
     t.index ["import_id"], name: "index_accounts_on_import_id"
     t.index ["plaid_account_id"], name: "index_accounts_on_plaid_account_id"
+    t.index ["prior_account_id"], name: "index_accounts_on_prior_account_id"
     t.index ["simplefin_account_id"], name: "index_accounts_on_simplefin_account_id"
     t.index ["status"], name: "index_accounts_on_status"
   end
@@ -670,6 +672,22 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_11_094448) do
     t.index ["plaid_id"], name: "index_plaid_items_on_plaid_id", unique: true
   end
 
+  create_table "prior_accounts", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.string "account_number"
+    t.string "name", null: false
+    t.string "currency", null: false
+    t.decimal "current_balance", precision: 19, scale: 4
+    t.date "last_statement_date"
+    t.datetime "last_synced_at"
+    t.jsonb "raw_payload", default: {}
+    t.jsonb "raw_transactions_payload", default: {}
+    t.jsonb "sync_metadata", default: {}
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_number"], name: "index_prior_accounts_on_account_number", unique: true, where: "(account_number IS NOT NULL)"
+    t.index ["name"], name: "index_prior_accounts_on_name", unique: true
+  end
+
   create_table "properties", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
@@ -1005,6 +1023,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_11_094448) do
   add_foreign_key "accounts", "families"
   add_foreign_key "accounts", "imports"
   add_foreign_key "accounts", "plaid_accounts"
+  add_foreign_key "accounts", "prior_accounts"
   add_foreign_key "accounts", "simplefin_accounts"
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
