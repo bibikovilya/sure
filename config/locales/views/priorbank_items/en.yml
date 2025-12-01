@@ -1,0 +1,10 @@
+---
+en:
+  priorbank_items:
+    create:
+      success: "PriorBank connection created successfully"
+      errors:
+        blank_credentials: "Login and password are required"
+        unexpected: "An unexpected error occurred: %{error}. Please try again."
+    destroy:
+      success: "PriorBank connection successfully scheduled for deletion."

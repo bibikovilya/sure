@@ -86,6 +86,28 @@ en:
         remove_invitation: Remove Invitation
         remove_member: Remove Member
         save: Save
+    providers:
+      priorbank_panel:
+        setup_instructions: "Setup instructions:"
+        step_1: "Enter your PriorBank online banking credentials below"
+        step_2: "Click Save Configuration to enable automatic transaction syncing"
+        step_3: "After successful connection, visit the Accounts tab to manage and set up accounts"
+        field_descriptions: "Field descriptions:"
+        name_label: "Connection Name"
+        name_description: "A friendly name to identify this connection"
+        name_placeholder: "e.g., Personal Account, Business Account"
+        login_label: "Login"
+        login_description: "Your PriorBank online banking login"
+        password_label: "Password"
+        password_description: "Your PriorBank online banking password"
+        login_placeholder: "Enter your PriorBank login"
+        password_placeholder: "Enter your PriorBank password"
+        save_button: "Save Configuration"
+        configured_message: "Configured connections. Visit the %{accounts_link} tab to manage accounts."
+        no_connections: "No PriorBank connections yet."
+        login_display: "Login: %{login}***"
+        delete_confirm: "Are you sure you want to delete this PriorBank connection?"
+        scheduled_for_deletion: "This PriorBank connection is scheduled for deletion."
     securities:
       show:
         page_title: Security
