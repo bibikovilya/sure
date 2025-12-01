@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
+ActiveRecord::Schema[7.2].define(version: 2025_12_01_202839) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
@@ -26,7 +26,6 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id", "provider_type"], name: "index_account_providers_on_account_and_provider_type", unique: true
-    t.index ["account_id", "provider_type"], name: "index_account_providers_on_account_id_and_provider_type", unique: true
     t.index ["provider_type", "provider_id"], name: "index_account_providers_on_provider_type_and_provider_id", unique: true
   end
 
@@ -46,7 +45,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
     t.decimal "cash_balance", precision: 19, scale: 4, default: "0.0"
     t.jsonb "locked_attributes", default: {}
     t.string "status", default: "active"
-    t.uuid "prior_account_id"
+    t.uuid "priorbank_account_id"
     t.uuid "simplefin_account_id"
     t.index ["accountable_id", "accountable_type"], name: "index_accounts_on_accountable_id_and_accountable_type"
     t.index ["accountable_type"], name: "index_accounts_on_accountable_type"
@@ -57,7 +56,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
     t.index ["family_id"], name: "index_accounts_on_family_id"
     t.index ["import_id"], name: "index_accounts_on_import_id"
     t.index ["plaid_account_id"], name: "index_accounts_on_plaid_account_id"
-    t.index ["prior_account_id"], name: "index_accounts_on_prior_account_id"
+    t.index ["priorbank_account_id"], name: "index_accounts_on_priorbank_account_id"
     t.index ["simplefin_account_id"], name: "index_accounts_on_simplefin_account_id"
     t.index ["status"], name: "index_accounts_on_status"
   end
@@ -691,6 +690,33 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
     t.index ["name"], name: "index_prior_accounts_on_name", unique: true
   end
 
+  create_table "priorbank_accounts", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "priorbank_item_id", null: false
+    t.string "name", null: false
+    t.string "account_type", null: false
+    t.string "currency", default: "BYN", null: false
+    t.decimal "current_balance", precision: 19, scale: 4
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.string "account_number"
+    t.index ["account_number"], name: "index_priorbank_accounts_on_account_number"
+    t.index ["account_type"], name: "index_priorbank_accounts_on_account_type"
+    t.index ["currency"], name: "index_priorbank_accounts_on_currency"
+    t.index ["priorbank_item_id"], name: "index_priorbank_accounts_on_priorbank_item_id"
+  end
+
+  create_table "priorbank_items", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.string "name", null: false
+    t.string "login"
+    t.string "password"
+    t.string "status", default: "good", null: false
+    t.boolean "scheduled_for_deletion", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["family_id"], name: "index_priorbank_items_on_family_id"
+  end
+
   create_table "properties", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
@@ -703,7 +729,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
 
   create_table "recurring_transactions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "family_id", null: false
-    t.uuid "merchant_id", null: false
+    t.uuid "merchant_id"
     t.decimal "amount", precision: 19, scale: 4, null: false
     t.string "currency", null: false
     t.integer "expected_day_of_month", null: false
@@ -999,12 +1025,10 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
     t.datetime "set_onboarding_preferences_at"
     t.datetime "set_onboarding_goals_at"
     t.string "default_account_order", default: "name_asc"
-    t.jsonb "preferences", default: {}, null: false
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["family_id"], name: "index_users_on_family_id"
     t.index ["last_viewed_chat_id"], name: "index_users_on_last_viewed_chat_id"
     t.index ["otp_secret"], name: "index_users_on_otp_secret", unique: true, where: "(otp_secret IS NOT NULL)"
-    t.index ["preferences"], name: "index_users_on_preferences", using: :gin
   end
 
   create_table "valuations", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -1026,11 +1050,11 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
     t.string "subtype"
   end
 
-  add_foreign_key "account_providers", "accounts"
+  add_foreign_key "account_providers", "accounts", on_delete: :cascade
   add_foreign_key "accounts", "families"
   add_foreign_key "accounts", "imports"
   add_foreign_key "accounts", "plaid_accounts"
-  add_foreign_key "accounts", "prior_accounts"
+  add_foreign_key "accounts", "priorbank_accounts"
   add_foreign_key "accounts", "simplefin_accounts"
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
@@ -1041,11 +1065,11 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
   add_foreign_key "budgets", "families"
   add_foreign_key "categories", "families"
   add_foreign_key "chats", "users"
-  add_foreign_key "entries", "accounts"
+  add_foreign_key "entries", "accounts", on_delete: :cascade
   add_foreign_key "entries", "imports"
   add_foreign_key "family_exports", "families"
   add_foreign_key "holdings", "account_providers"
-  add_foreign_key "holdings", "accounts"
+  add_foreign_key "holdings", "accounts", on_delete: :cascade
   add_foreign_key "holdings", "securities"
   add_foreign_key "impersonation_session_logs", "impersonation_sessions"
   add_foreign_key "impersonation_sessions", "users", column: "impersonated_id"
@@ -1065,6 +1089,8 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
   add_foreign_key "oidc_identities", "users"
   add_foreign_key "plaid_accounts", "plaid_items"
   add_foreign_key "plaid_items", "families"
+  add_foreign_key "priorbank_accounts", "priorbank_items"
+  add_foreign_key "priorbank_items", "families"
   add_foreign_key "recurring_transactions", "families"
   add_foreign_key "recurring_transactions", "merchants"
   add_foreign_key "rejected_transfers", "transactions", column: "inflow_transaction_id"

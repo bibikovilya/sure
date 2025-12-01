@@ -1,5 +1,5 @@
 class PriorbankItemsController < ApplicationController
-  before_action :set_priorbank_item, only: [ :destroy ]
+  before_action :set_priorbank_item, only: [ :destroy, :sync ]
 
   def create
     login = priorbank_params[:login]
@@ -11,7 +11,7 @@ class PriorbankItemsController < ApplicationController
     begin
       Current.family.priorbank_items.create!(name:, login:, password:)
       flash.now[:notice] = t(".success")
-      render_priorbank_panel_stream
+      render_providers_panel_stream
     rescue => e
       Rails.logger.error("Priorbank connection error: #{e.message}")
       render_error(t(".errors.unexpected", error: e.message))
@@ -21,7 +21,18 @@ class PriorbankItemsController < ApplicationController
   def destroy
     @priorbank_item.destroy_later
     flash.now[:notice] = t(".success")
-    render_priorbank_panel_stream
+    render_providers_panel_stream
+  end
+
+  def sync
+    unless @priorbank_item.syncing?
+      @priorbank_item.sync_later
+    end
+
+    respond_to do |format|
+      format.html { redirect_back_or_to accounts_path }
+      format.json { head :ok }
+    end
   end
 
   private
@@ -34,7 +45,7 @@ class PriorbankItemsController < ApplicationController
       params.require(:priorbank_item).permit(:name, :login, :password)
     end
 
-    def render_priorbank_panel_stream
+    def render_providers_panel_stream
       @priorbank_item = PriorbankItem.new
       @priorbank_items = Current.family.priorbank_items.ordered
 
@@ -53,7 +64,7 @@ class PriorbankItemsController < ApplicationController
     def render_error(message)
       @error_message = message
 
-      render_priorbank_panel_stream
+      render_providers_panel_stream
       response.status = :unprocessable_entity
     end
 end

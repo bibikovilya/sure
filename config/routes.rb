@@ -320,6 +320,12 @@ Rails.application.routes.draw do
     end
   end
 
+  resources :priorbank_items, only: %i[create destroy] do
+    member do
+      post :sync
+    end
+  end
+
   resources :lunchflow_items, only: %i[index new create show edit update destroy] do
     collection do
       get :preload_accounts

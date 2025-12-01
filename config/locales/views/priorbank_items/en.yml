@@ -8,3 +8,18 @@ en:
         unexpected: "An unexpected error occurred: %{error}. Please try again."
     destroy:
       success: "PriorBank connection successfully scheduled for deletion."
+    sync:
+      success: "PriorBank connection sync initiated."
+      errors:
+        unexpected: "An unexpected error occurred: %{error}. Please try again."
+    priorbank_item:
+      delete: Delete
+      deletion_in_progress: "(deletion in progress...)"
+      error: Error occurred while syncing data
+      no_accounts_description: This connection doesn't have any synchronized accounts yet.
+      no_accounts_title: No accounts found
+      requires_update: Requires re-authentication
+      status: Last synced %{timestamp} ago
+      status_never: Never synced
+      syncing: Syncing...
+      update: Update connection
