@@ -1,0 +1,38 @@
+<%# locals: (priorbank_account:) %>
+
+<div class="p-4 flex items-center justify-between gap-3 group/priorbank-account">
+  <div class="flex items-center gap-3">
+    <div class="flex items-center justify-center h-10 w-10 bg-primary/10 rounded-full">
+      <%= icon "building-2", size: "sm", class: "text-primary" %>
+    </div>
+
+    <div>
+      <div>
+        <p class="text-sm font-medium text-primary">
+          <%= priorbank_account.name %>
+        </p>
+        <% if priorbank_account.account.present? %>
+          <span class="text-secondary">• <%= t(".linked_to", account: priorbank_account.account.name) %></span>
+        <% end %>
+      </div>
+      <p class="text-sm text-secondary truncate"><%= priorbank_account.account_type %> • <%= priorbank_account.account_number %></p>
+    </div>
+
+    <% if priorbank_account.account.present? %>
+      <%= link_to priorbank_account.account,
+                  data: { turbo_frame: "_top" },
+                  class: "group-hover/priorbank-account:flex hidden hover:opacity-80 items-center justify-center" do %>
+        <%= icon("external-link", size: "sm") %>
+      <% end %>
+    <% end %>
+  </div>
+  <div class="flex items-center gap-8">
+    <% if priorbank_account.syncing? %>
+      <div class="w-16 h-6 bg-loader rounded-full animate-pulse"></div>
+    <% else %>
+      <p class="text-sm font-medium text-primary">
+        <%= Money.new(priorbank_account.current_balance, priorbank_account.currency).format %>
+      </p>
+    <% end %>
+  </div>
+</div>

@@ -23,3 +23,7 @@ en:
       status_never: Never synced
       syncing: Syncing...
       update: Update connection
+      status_summary: "%{linked_accounts} linked, %{unlinked_accounts} need setup"
+    priorbank_account:
+      linked_to: "Linked to %{account}"
+      syncing: Syncing...

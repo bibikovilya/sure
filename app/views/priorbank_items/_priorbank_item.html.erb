@@ -21,7 +21,7 @@
           </div>
           <% if priorbank_item.priorbank_accounts.any? %>
             <p class="text-xs text-secondary">
-              <%= priorbank_item.sync_status_summary %>
+              <%= t(".status_summary", linked_accounts: priorbank_item.linked_priorbank_accounts.count, unlinked_accounts: priorbank_item.unlinked_priorbank_accounts.count) %>
             </p>
           <% end %>
           <% if priorbank_item.syncing? %>
@@ -65,7 +65,44 @@
     <% unless priorbank_item.scheduled_for_deletion? %>
       <div class="space-y-4 mt-4">
         <% if priorbank_item.priorbank_accounts.any? %>
-          <%= render "accounts/index/account_groups", accounts: priorbank_item.priorbank_accounts.map(&:current_account).compact %>
+          <% linked_accounts = priorbank_item.linked_priorbank_accounts %>
+          <% unlinked_accounts = priorbank_item.unlinked_priorbank_accounts %>
+
+          <% if linked_accounts.any? %>
+            <div class="bg-container-inset p-1 rounded-xl">
+              <div class="flex items-center px-4 py-2 text-xs font-medium text-secondary">
+                <p>Linked Accounts</p>
+                <span class="text-subdued mx-2">&middot;</span>
+                <p><%= grouped_accounts[:linked].count %></p>
+              </div>
+              <div class="bg-container rounded-lg shadow-border-xs">
+                <% linked_accounts.each_with_index do |priorbank_account, index| %>
+                  <%= render "priorbank_items/priorbank_account", priorbank_account: priorbank_account %>
+                  <% unless index == linked_accounts.count - 1 %>
+                    <%= render "shared/ruler" %>
+                  <% end %>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
+
+          <% if unlinked_accounts.any? %>
+            <div class="bg-container-inset p-1 rounded-xl">
+              <div class="flex items-center px-4 py-2 text-xs font-medium text-secondary">
+                <p>Needs Setup</p>
+                <span class="text-subdued mx-2">&middot;</span>
+                <p><%= unlinked_accounts.count %></p>
+              </div>
+              <div class="bg-container rounded-lg shadow-border-xs">
+                <% unlinked_accounts.each_with_index do |priorbank_account, index| %>
+                  <%= render "priorbank_items/priorbank_account", priorbank_account: priorbank_account %>
+                  <% unless index == unlinked_accounts.count - 1 %>
+                    <%= render "shared/ruler" %>
+                  <% end %>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
         <% end %>
 
         <% if priorbank_item.priorbank_accounts.empty? %>

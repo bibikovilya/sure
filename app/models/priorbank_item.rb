@@ -47,20 +47,11 @@ class PriorbankItem < ApplicationRecord
     end
   end
 
-  def sync_status_summary
-    latest = latest_sync
-    return nil unless latest
+  def linked_priorbank_accounts
+    priorbank_accounts.where(id: family.accounts.select(:priorbank_account_id).pluck(:priorbank_account_id))
+  end
 
-    total_accounts = priorbank_accounts.count
-    linked_count = family.accounts.where(priorbank_account_id: priorbank_accounts.select(:id)).count
-    unlinked_count = total_accounts - linked_count
-
-    if total_accounts == 0
-      "No accounts configured"
-    elsif unlinked_count == 0
-      "#{linked_count} #{'account'.pluralize(linked_count)} synced"
-    else
-      "#{linked_count} synced, #{unlinked_count} need setup"
-    end
+  def unlinked_priorbank_accounts
+    priorbank_accounts.where.not(id: family.accounts.select(:priorbank_account_id).pluck(:priorbank_account_id))
   end
 end
