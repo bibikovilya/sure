@@ -141,7 +141,7 @@ class AccountsController < ApplicationController
         @account.account_providers.destroy_all
 
         # Remove legacy system links (foreign keys)
-        @account.update!(plaid_account_id: nil, simplefin_account_id: nil, priorbank_account_id: nil)
+        @account.update!(plaid_account_id: nil, simplefin_account_id: nil)
       end
 
       redirect_to accounts_path, notice: t("accounts.unlink.success")

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2025_12_01_202839) do
+ActiveRecord::Schema[7.2].define(version: 2025_12_05_153941) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
@@ -45,7 +45,6 @@ ActiveRecord::Schema[7.2].define(version: 2025_12_01_202839) do
     t.decimal "cash_balance", precision: 19, scale: 4, default: "0.0"
     t.jsonb "locked_attributes", default: {}
     t.string "status", default: "active"
-    t.uuid "priorbank_account_id"
     t.uuid "simplefin_account_id"
     t.index ["accountable_id", "accountable_type"], name: "index_accounts_on_accountable_id_and_accountable_type"
     t.index ["accountable_type"], name: "index_accounts_on_accountable_type"
@@ -56,7 +55,6 @@ ActiveRecord::Schema[7.2].define(version: 2025_12_01_202839) do
     t.index ["family_id"], name: "index_accounts_on_family_id"
     t.index ["import_id"], name: "index_accounts_on_import_id"
     t.index ["plaid_account_id"], name: "index_accounts_on_plaid_account_id"
-    t.index ["priorbank_account_id"], name: "index_accounts_on_priorbank_account_id"
     t.index ["simplefin_account_id"], name: "index_accounts_on_simplefin_account_id"
     t.index ["status"], name: "index_accounts_on_status"
   end
@@ -1054,7 +1052,6 @@ ActiveRecord::Schema[7.2].define(version: 2025_12_01_202839) do
   add_foreign_key "accounts", "families"
   add_foreign_key "accounts", "imports"
   add_foreign_key "accounts", "plaid_accounts"
-  add_foreign_key "accounts", "priorbank_accounts"
   add_foreign_key "accounts", "simplefin_accounts"
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"

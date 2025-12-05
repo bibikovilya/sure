@@ -13,8 +13,7 @@ class PriorbankAccountsController < ApplicationController
     @account = Current.family.accounts.find(params[:priorbank_link][:account_id])
 
     # Guard: only manual accounts can be linked
-    if @account.account_providers.any? || @account.plaid_account_id.present? || @account.simplefin_account_id.present? ||
-       @account.priorbank_account_id.present?
+    if @account.account_providers.any? || @account.plaid_account_id.present? || @account.simplefin_account_id.present?
       flash[:alert] = t(".errors.only_manual")
       if turbo_frame_request?
         return render turbo_stream: Array(flash_notification_stream_items)
