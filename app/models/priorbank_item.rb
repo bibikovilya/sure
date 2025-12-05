@@ -36,7 +36,7 @@ class PriorbankItem < ApplicationRecord
 
   def schedule_account_syncs(parent_sync: nil, window_start_date: nil, window_end_date: nil)
     priorbank_accounts.each do |priorbank_account|
-      account = priorbank_account.current_account
+      account = priorbank_account.account
       next unless account
 
       account.sync_later(
@@ -48,10 +48,10 @@ class PriorbankItem < ApplicationRecord
   end
 
   def linked_priorbank_accounts
-    priorbank_accounts.where(id: family.accounts.select(:priorbank_account_id).pluck(:priorbank_account_id))
+    priorbank_accounts.joins(:account_provider)
   end
 
   def unlinked_priorbank_accounts
-    priorbank_accounts.where.not(id: family.accounts.select(:priorbank_account_id).pluck(:priorbank_account_id))
+    priorbank_accounts.left_joins(:account_provider).where(account_providers: { id: nil })
   end
 end

@@ -33,13 +33,10 @@ class PriorbankAccountsController < ApplicationController
       end
     end
 
-    Account.transaction do
-      @account.lock!
-      @priorbank_account.lock!
-
-      @account.priorbank_account = @priorbank_account
-      @account.save!
-    end
+    AccountProvider.create!(
+      account: @account,
+      provider: @priorbank_account
+    )
 
     if turbo_frame_request?
       @priorbank_account.reload
