@@ -77,7 +77,13 @@
               </div>
               <div class="bg-container rounded-lg shadow-border-xs">
                 <% linked_accounts.each_with_index do |priorbank_account, index| %>
-                  <%= render priorbank_account.account %>
+                  <div class="relative">
+                    <%= render "priorbank_items/priorbank_account", priorbank_account: priorbank_account %>
+                    <div class="flex justify-center">
+                      <%= icon "arrow-down" %>
+                    </div>
+                    <%= render priorbank_account.account %>
+                  </div>
                   <% unless index == linked_accounts.count - 1 %>
                     <%= render "shared/ruler" %>
                   <% end %>
