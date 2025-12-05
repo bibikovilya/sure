@@ -326,6 +326,13 @@ Rails.application.routes.draw do
     end
   end
 
+  resources :priorbank_accounts, only: [] do
+    member do
+      get :link
+      post :link_account
+    end
+  end
+
   resources :lunchflow_items, only: %i[index new create show edit update destroy] do
     collection do
       get :preload_accounts

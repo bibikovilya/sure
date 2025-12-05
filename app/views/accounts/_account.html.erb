@@ -21,6 +21,9 @@
             <% if account.simplefin_account&.org_data&.dig('name') %>
               <span class="text-secondary">• <%= account.simplefin_account.org_data["name"] %></span>
             <% end %>
+            <% if account.priorbank_account %>
+              <span class="text-secondary">• <%= account.priorbank_account.name %></span>
+            <% end %>
           </div>
           <% if account.long_subtype_label %>
             <p class="text-sm text-secondary truncate"><%= account.long_subtype_label %></p>

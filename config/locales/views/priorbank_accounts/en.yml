@@ -1,0 +1,20 @@
+---
+en:
+  priorbank_accounts:
+    link:
+      title: "Link Priorbank account"
+      no_accounts_message: "No available manual accounts to link."
+      no_accounts_instructions:
+        - "Create a manual account first, then link it here."
+        - "Only manual accounts without existing provider links can be linked."
+      priorbank_account_label: "Priorbank account"
+      manual_account_label: "Link to manual account"
+      select_account_label: "Manual account"
+      select_account_prompt: "Select an account"
+      link_button: "Link account"
+      cancel_button: "Cancel"
+    link_account:
+      success: "Account successfully linked to Priorbank"
+      errors:
+        only_manual: "Only manual accounts can be linked"
+        invalid_account: "Invalid Priorbank account selected"

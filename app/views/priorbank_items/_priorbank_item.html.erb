@@ -73,11 +73,11 @@
               <div class="flex items-center px-4 py-2 text-xs font-medium text-secondary">
                 <p>Linked Accounts</p>
                 <span class="text-subdued mx-2">&middot;</span>
-                <p><%= grouped_accounts[:linked].count %></p>
+                <p><%= linked_accounts.count %></p>
               </div>
               <div class="bg-container rounded-lg shadow-border-xs">
                 <% linked_accounts.each_with_index do |priorbank_account, index| %>
-                  <%= render "priorbank_items/priorbank_account", priorbank_account: priorbank_account %>
+                  <%= render priorbank_account.account %>
                   <% unless index == linked_accounts.count - 1 %>
                     <%= render "shared/ruler" %>
                   <% end %>

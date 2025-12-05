@@ -11,18 +11,15 @@
         <p class="text-sm font-medium text-primary">
           <%= priorbank_account.name %>
         </p>
-        <% if priorbank_account.account.present? %>
-          <span class="text-secondary">• <%= t(".linked_to", account: priorbank_account.account.name) %></span>
-        <% end %>
       </div>
       <p class="text-sm text-secondary truncate"><%= priorbank_account.account_type %> • <%= priorbank_account.account_number %></p>
     </div>
 
-    <% if priorbank_account.account.present? %>
-      <%= link_to priorbank_account.account,
-                  data: { turbo_frame: "_top" },
+    <% if priorbank_account.account.blank? %>
+      <%= link_to link_priorbank_account_path(priorbank_account),
+                  data: { turbo_frame: "modal" },
                   class: "group-hover/priorbank-account:flex hidden hover:opacity-80 items-center justify-center" do %>
-        <%= icon("external-link", size: "sm") %>
+        <%= icon("link", size: "sm") %>
       <% end %>
     <% end %>
   </div>
