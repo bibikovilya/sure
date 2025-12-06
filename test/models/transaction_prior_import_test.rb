@@ -5,6 +5,8 @@ class TransactionPriorImportTest < ActiveSupport::TestCase
 
   setup do
     @subject = @import = TransactionPriorImport.new(family: families(:dylan_family))
+    @import.update(raw_file_str: sample_prior_csv, account: accounts(:depository_byn))
+    @import.set_default_column_mappings
   end
 
   test "sets default configuration on initialization" do
@@ -22,12 +24,6 @@ class TransactionPriorImportTest < ActiveSupport::TestCase
   end
 
   test "sets default column mappings when raw_file_str is updated" do
-    @import.update!(raw_file_str: sample_prior_csv)
-
-    # Force the callback to run since we know the raw_file_str changed
-    @import.send(:set_default_column_mappings)
-    @import.reload
-
     assert_equal "Дата транзакции", @import.date_col_label
     assert_equal "Обороты по счету", @import.amount_col_label
     assert_equal "Операция", @import.name_col_label
@@ -36,15 +32,6 @@ class TransactionPriorImportTest < ActiveSupport::TestCase
   end
 
   test "extracts transaction lines from complex CSV format" do
-    @import.update!(
-      raw_file_str: sample_prior_csv,
-      date_col_label: "Дата транзакции",
-      amount_col_label: "Сумма",
-      name_col_label: "Операция",
-      currency_col_label: "Валюта",
-      notes_col_label: "Notes",
-      date_format: "%d.%m.%Y %H:%M:%S"
-    )
     @import.generate_rows_from_csv
     @import.reload
 
@@ -56,15 +43,6 @@ class TransactionPriorImportTest < ActiveSupport::TestCase
   end
 
   test "import all parsed rows into TransactionPriorImportRow records" do
-    @import.update!(
-      raw_file_str: sample_prior_csv,
-      date_col_label: "Дата транзакции",
-      amount_col_label: "Обороты по счету",
-      name_col_label: "Операция",
-      currency_col_label: "Валюта",
-      notes_col_label: "Notes",
-      date_format: "%d.%m.%Y %H:%M:%S"
-    )
     @import.generate_rows_from_csv
     @import.reload
 
@@ -72,16 +50,6 @@ class TransactionPriorImportTest < ActiveSupport::TestCase
   end
 
   test "creates transactions from imported rows" do
-    @import.update!(
-      account: accounts(:depository),
-      raw_file_str: sample_prior_csv,
-      date_col_label: "Дата транзакции",
-      amount_col_label: "Обороты по счету",
-      name_col_label: "Операция",
-      currency_col_label: "Валюта",
-      notes_col_label: "Notes",
-      date_format: "%d.%m.%Y %H:%M:%S"
-    )
     @import.generate_rows_from_csv
     @import.reload
 
@@ -91,11 +59,29 @@ class TransactionPriorImportTest < ActiveSupport::TestCase
     end
   end
 
+  test "creates transactions with correct attributes" do
+    @import.generate_rows_from_csv
+    @import.reload
+    @import.publish
+
+    income = Entry.all.find { |e| e.name.include?("Поступление на контракт клиента") }
+    assert income.present?, "Should find test transaction"
+    assert_equal Date.new(2024, 3, 25), income.date
+    assert_equal BigDecimal("-900"), income.amount
+    assert_equal "BYN", income.currency
+
+    expense = Entry.all.find { |e| e.name.include?("Retail BLR Minsk Gipermarket Gippo") }
+    assert expense.present?, "Should find test transaction"
+    assert_equal Date.new(2024, 3, 29), expense.date
+    assert_equal BigDecimal("29.88"), expense.amount
+    assert_equal "BYN", expense.currency
+  end
+
   test "filters out duplicate transactions based on existing imports" do
     # Create an existing import with the same transaction
     existing_import = TransactionPriorImport.create!(
       family: families(:dylan_family),
-      account: accounts(:depository),
+      account: accounts(:depository_byn),
       raw_file_str: sample_prior_csv,
       date_col_label: "Дата транзакции",
       amount_col_label: "Обороты по счету",
@@ -109,22 +95,14 @@ class TransactionPriorImportTest < ActiveSupport::TestCase
     existing_import.publish
 
     # Now create a new import with the same data
-    @import.update!(
-      account: accounts(:depository),
-      raw_file_str: sample_prior_csv,
-      date_col_label: "Дата транзакции",
-      amount_col_label: "Обороты по счету",
-      name_col_label: "Операция",
-      currency_col_label: "Валюта",
-      notes_col_label: "Notes",
-      date_format: "%d.%m.%Y %H:%M:%S"
-    )
-
+    update_import_csv(sample_prior_csv)
     @import.generate_rows_from_csv
     @import.reload
 
-    # Should have no rows since they're all duplicates
-    assert_equal 0, @import.rows.count
+    assert_difference -> { Entry.count } => 0,
+                      -> { Transaction.count } => 0 do
+      @import.publish
+    end
   end
 
   test "handles money-back fees in amount calculation" do
@@ -135,24 +113,33 @@ class TransactionPriorImportTest < ActiveSupport::TestCase
       Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
     CSV
 
-    @import.update!(
-      account: accounts(:depository),
-      raw_file_str: csv_with_fees,
-      date_col_label: "Дата транзакции",
-      amount_col_label: "Обороты по счету",
-      name_col_label: "Операция",
-      currency_col_label: "Валюта",
-      notes_col_label: "Notes",
-      date_format: "%d.%m.%Y %H:%M:%S",
-      number_format: "1.234,56"
-    )
-
+    update_import_csv(csv_with_fees)
     @import.generate_rows_from_csv
     @import.reload
+    @import.publish
 
-    row = @import.rows.find { |r| r.name.include?("Отправка SMS Monthly") }
-    assert row.present?, "Should find test transaction row"
-    assert_equal "-1.08", row.amount
+    expense = Entry.all.find { |e| e.name.include?("Отправка SMS Monthly") }
+    assert expense.present?, "Should find test transaction"
+    assert_equal BigDecimal("1.08"), expense.amount
+  end
+
+  test "handles other currency transaction than account currency" do
+    csv_with_other_currency = <<~CSV
+      Операции по ........5333
+      Дата транзакции,Операция,Сумма,Валюта,Дата операции по счету,Комиссия/Money-back,Обороты по счету,Цифровая карта,Категория операции,
+      01.11.2025 00:00:00,Retail POL WARSZAWA ORANGE FLEX  ,"-35,00",PLN,04.11.2025,"0,00","-10,02",,Коммунальные услуги,
+      Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
+    CSV
+
+    update_import_csv(csv_with_other_currency)
+    @import.generate_rows_from_csv
+    @import.reload
+    @import.publish
+
+    entry = Entry.all.find { |e| e.name.include?("Retail POL WARSZAWA ORANGE FLEX") }
+    assert entry.present?, "Should find test transaction"
+    assert_equal 10.02, entry.amount
+    assert_equal "BYN", entry.currency
   end
 
   test "detects ATM withdrawals and creates transfers" do
@@ -163,17 +150,7 @@ class TransactionPriorImportTest < ActiveSupport::TestCase
       Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
     CSV
 
-    @import.update!(
-      account: accounts(:depository),
-      raw_file_str: atm_csv,
-      date_col_label: "Дата транзакции",
-      amount_col_label: "Обороты по счету",
-      name_col_label: "Операция",
-      currency_col_label: "Валюта",
-      notes_col_label: "Notes",
-      date_format: "%d.%m.%Y %H:%M:%S",
-      number_format: "1.234,56"
-    )
+    update_import_csv(atm_csv)
 
     @import.generate_rows_from_csv
     @import.reload
@@ -198,8 +175,8 @@ class TransactionPriorImportTest < ActiveSupport::TestCase
     assert_not_nil cash_account
 
     # Find the transfer between our deposit account and the cash account
-    transfer = Transfer.all.find { |t| t.from_account == accounts(:depository) && t.to_account == cash_account }
-    assert_not_nil transfer, "Transfer from #{accounts(:depository).name} to #{cash_account.name} not found"
+    transfer = Transfer.all.find { |t| t.from_account == accounts(:depository_byn) && t.to_account == cash_account }
+    assert_not_nil transfer, "Transfer from #{accounts(:depository_byn).name} to #{cash_account.name} not found"
 
     # Verify transaction kinds
     assert_equal "funds_movement", transfer.outflow_transaction.kind
@@ -214,17 +191,7 @@ class TransactionPriorImportTest < ActiveSupport::TestCase
       Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
     CSV
 
-    @import.update!(
-      account: accounts(:depository),
-      raw_file_str: atm_csv,
-      date_col_label: "Дата транзакции",
-      amount_col_label: "Обороты по счету",
-      name_col_label: "Операция",
-      currency_col_label: "Валюта",
-      notes_col_label: "Notes",
-      date_format: "%d.%m.%Y %H:%M:%S",
-      number_format: "1.234,56"
-    )
+    update_import_csv(atm_csv)
 
     @import.generate_rows_from_csv
     @import.reload
@@ -252,17 +219,7 @@ class TransactionPriorImportTest < ActiveSupport::TestCase
       Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
     CSV
 
-    @import.update!(
-      account: accounts(:depository),
-      raw_file_str: mixed_csv,
-      date_col_label: "Дата транзакции",
-      amount_col_label: "Обороты по счету",
-      name_col_label: "Операция",
-      currency_col_label: "Валюта",
-      notes_col_label: "Notes",
-      date_format: "%d.%m.%Y %H:%M:%S",
-      number_format: "1.234,56"
-    )
+    update_import_csv(mixed_csv)
 
     @import.generate_rows_from_csv
     @import.reload
@@ -275,15 +232,6 @@ class TransactionPriorImportTest < ActiveSupport::TestCase
   end
 
   test "adds notes column to CSV headers during parsing" do
-    @import.update!(
-      raw_file_str: sample_prior_csv,
-      date_col_label: "Дата транзакции",
-      amount_col_label: "Сумма",
-      name_col_label: "Операция",
-      currency_col_label: "Валюта",
-      notes_col_label: "Notes",
-      date_format: "%d.%m.%Y %H:%M:%S"
-    )
     @import.generate_rows_from_csv
     @import.reload
 
@@ -306,15 +254,6 @@ class TransactionPriorImportTest < ActiveSupport::TestCase
   end
 
   test "csv_sample returns limited rows for preview" do
-    @import.update!(
-      raw_file_str: sample_prior_csv,
-      date_col_label: "Дата транзакции",
-      amount_col_label: "Обороты по счету",
-      name_col_label: "Операция",
-      currency_col_label: "Валюта",
-      notes_col_label: "Notes",
-      date_format: "%d.%m.%Y %H:%M:%S"
-    )
     @import.generate_rows_from_csv
 
     sample = @import.csv_sample
@@ -322,7 +261,7 @@ class TransactionPriorImportTest < ActiveSupport::TestCase
   end
 
   test "handles empty CSV gracefully" do
-    @import.update!(raw_file_str: "")
+    update_import_csv("")
     @import.generate_rows_from_csv
 
     assert_equal 0, @import.rows.count
@@ -335,15 +274,7 @@ class TransactionPriorImportTest < ActiveSupport::TestCase
       Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
     CSV
 
-    @import.update!(
-      raw_file_str: headers_only,
-      date_col_label: "Дата транзакции",
-      amount_col_label: "Обороты по счету",
-      name_col_label: "Операция",
-      currency_col_label: "Валюта",
-      notes_col_label: "Notes",
-      date_format: "%d.%m.%Y %H:%M:%S"
-    )
+    update_import_csv(headers_only)
 
     @import.generate_rows_from_csv
     assert_equal 0, @import.rows.count
@@ -356,7 +287,7 @@ class TransactionPriorImportTest < ActiveSupport::TestCase
     assert_equal expected_steps, import_without_account.mapping_steps
 
     # With account, should not include account mapping
-    import_with_account = TransactionPriorImport.new(family: families(:dylan_family), account: accounts(:depository))
+    import_with_account = TransactionPriorImport.new(family: families(:dylan_family), account: accounts(:depository_byn))
     expected_steps = [ Import::CategoryMapping, Import::TagMapping ]
     assert_equal expected_steps, import_with_account.mapping_steps
   end
@@ -372,7 +303,7 @@ class TransactionPriorImportTest < ActiveSupport::TestCase
     assert_equal expected_keys, import_without_account.column_keys
 
     # With account
-    import_with_account = TransactionPriorImport.new(family: families(:dylan_family), account: accounts(:depository))
+    import_with_account = TransactionPriorImport.new(family: families(:dylan_family), account: accounts(:depository_byn))
     expected_keys = %i[date amount name currency category tags notes]
     assert_equal expected_keys, import_with_account.column_keys
   end
@@ -414,5 +345,11 @@ class TransactionPriorImportTest < ActiveSupport::TestCase
         Дата транзакции,Транзакция,Сумма транзакции,Валюта,Сумма блокировки,Валюта,Цифровая карта,Категория операции,
         15.08.2024 14:51:04,Retail BLR MINSK ROSE CAFE,"14,80",BYN,"14,80",BYN,,Ресторация / бары / кафе,
       CSV
+    end
+
+    def update_import_csv(csv)
+      @import.instance_variable_set(:@parsed_csv, nil) # Clear any cached parsed CSV
+      @import.instance_variable_set(:@existing_transactions, nil) # Clear cached existing transactions
+      @import.update(raw_file_str: csv)
     end
 end

@@ -25,6 +25,15 @@ depository:
   accountable: one
   status: active
 
+depository_byn:
+  family: dylan_family
+  name: Local Account
+  balance: 5000
+  currency: BYN
+  accountable_type: Depository
+  accountable: one
+  status: active
+
 connected:
   family: dylan_family
   name: Plaid Depository Account

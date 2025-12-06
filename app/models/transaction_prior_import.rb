@@ -11,11 +11,7 @@ class TransactionPriorImport < TransactionImport
     notes_col_label: NOTES_HEADER
   }.freeze
   WITHDRAW_PATTERN = "Снятие наличных".freeze
-  FILE_LINES = {
-    transaction_start: "Операции по ",
-    headers: "Дата транзакции,Операция,Сумма,Валюта",
-    transaction_end: "Всего по контракту"
-  }
+  DATE_FORMATS = Family::DATE_FORMATS + [ [ "DD.MM.YYYY HH:MM:SS", "%d.%m.%Y %H:%M:%S" ] ].freeze
 
   # Override the parent import! method to handle ATM transfers
   def import!
@@ -112,7 +108,7 @@ class TransactionPriorImport < TransactionImport
         exchange_operating_mic: row[exchange_operating_mic_col_label].to_s,
         price: sanitize_number(row[price_col_label]).to_s,
         amount: sanitize_number(row[amount_col_label]).to_s,
-        currency: (row[currency_col_label] || default_currency).to_s,
+        currency: (row[currency_col_label] || default_currency).to_s, # Override to account currency in `import!`
         name: (row[name_col_label] || default_row_name).to_s,
         category: row[category_col_label].to_s,
         tags: row[tags_col_label].to_s,
@@ -149,7 +145,7 @@ class TransactionPriorImport < TransactionImport
 
     def parsed_csv
       @parsed_csv ||= begin
-        transaction_lines = extract_transaction_lines_as_csv
+        transaction_lines = PriorbankAccount::CsvParser.extract_transaction_lines(raw_file_str)
         transaction_lines = filter_duplicate_transactions(transaction_lines)
         transaction_lines = add_notes(transaction_lines)
         self.class.parse_csv_str(transaction_lines.join("\n"), col_sep: ",")
@@ -179,32 +175,10 @@ class TransactionPriorImport < TransactionImport
       end
     end
 
-    def extract_transaction_lines_as_csv
-      lines = raw_file_str.split("\n")
-      csv_lines = []
-      in_transaction_section = false
-      header_found = false
-
-      lines.each do |line|
-        if line.start_with?(FILE_LINES[:transaction_start])
-          in_transaction_section = true
-        elsif line.start_with?(FILE_LINES[:headers])
-          csv_lines << line unless header_found
-          header_found = true
-        elsif in_transaction_section && line.match(/^#{FILE_LINES[:transaction_end]}/)
-          in_transaction_section = false
-        elsif in_transaction_section && line.strip.present? && line.include?(",")
-          csv_lines << line
-        end
-      end
-
-      csv_lines
-    end
-
     def add_notes(transaction_lines)
       transaction_lines.each do |line|
         line.chomp!("\r")
-        if line.start_with?(FILE_LINES[:headers])
+        if line.start_with?(PriorbankAccount::CsvParser::FILE_LINES[:headers])
           line << NOTES_HEADER
         else
           line << "\"#{line.gsub("\"", "")}\""

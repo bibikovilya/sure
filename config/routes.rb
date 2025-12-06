@@ -323,6 +323,7 @@ Rails.application.routes.draw do
     member do
       get :link
       post :link_account
+      post :sync
     end
   end
 

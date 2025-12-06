@@ -10,11 +10,11 @@ class Provider::PriorbankAdapter < Provider::Base
   end
 
   def sync_path
-    Rails.application.routes.url_helpers.sync_priorbank_item_path(item)
+    Rails.application.routes.url_helpers.sync_priorbank_account_path(item)
   end
 
   def item
-    provider_account.priorbank_item
+    provider_account
   end
 
   def can_delete_holdings?
