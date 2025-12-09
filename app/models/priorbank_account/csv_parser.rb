@@ -82,8 +82,7 @@ class PriorbankAccount::CsvParser
 
       # Handle Priorbank format: "29.03.2024 19:32:46"
       Date.strptime(value.to_s, DATE_FORMAT)
-    rescue ArgumentError
-      # Fallback to simple date format
-      Date.strptime(value.to_s, "%d.%m.%Y")
+    rescue
+      Date.current
     end
 end
