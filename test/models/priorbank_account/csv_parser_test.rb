@@ -25,7 +25,7 @@ class PriorbankAccount::CsvParserTest < ActiveSupport::TestCase
     assert_equal BigDecimal("900"), first_transaction[:amount]
     assert_equal "Поступление на контракт клиента 749114-00081-032913", first_transaction[:name]
     assert_equal "BYN", first_transaction[:currency]
-    assert first_transaction[:notes].present?
+    assert_equal "25.03.2024 00:00:00,Поступление на контракт клиента 749114-00081-032913,900,00,BYN,25.03.2024,0,00,900,00,,,", first_transaction[:notes]
   end
 
   test "sanitizes numbers with Priorbank format (1.234,56)" do
@@ -65,8 +65,7 @@ class PriorbankAccount::CsvParserTest < ActiveSupport::TestCase
   test "stores full transaction line in notes for deduplication" do
     parsed_data = @parser.parse(sample_prior_csv)
 
-    assert parsed_data[0][:notes].present?, "Notes should be present"
-    assert_equal parsed_data[0][:notes], "25.03.2024 00:00:00,Поступление на контракт клиента 749114-00081-032913,900,00,BYN,25.03.2024,0,00,900,00,,,"
+    assert_equal "25.03.2024 00:00:00,Поступление на контракт клиента 749114-00081-032913,900,00,BYN,25.03.2024,0,00,900,00,,,", parsed_data[0][:notes]
   end
 
   test "handles empty CSV gracefully" do

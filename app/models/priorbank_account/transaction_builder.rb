@@ -36,7 +36,7 @@ class PriorbankAccount::TransactionBuilder
       # This checks for duplicates based on date, amount, currency, and name
       duplicate = adapter.find_duplicate_transaction(
         date: data[:date],
-        amount: data[:amount],
+        amount: data[:amount] * -1, # Invert amount for account perspective
         currency: data[:currency],
         name: data[:name]
       )
