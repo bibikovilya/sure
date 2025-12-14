@@ -1,6 +1,7 @@
 class PriorbankAccountsController < ApplicationController
+  before_action :set_priorbank_account, only: [ :link, :link_account, :sync_details ]
+
   def link
-    @priorbank_account = PriorbankAccount.find(params[:id])
     @available_accounts = Current.family.accounts
       .visible_manual
       .order(:name)
@@ -9,7 +10,6 @@ class PriorbankAccountsController < ApplicationController
   end
 
   def link_account
-    @priorbank_account = PriorbankAccount.find(params[:id])
     @account = Current.family.accounts.find(params[:priorbank_link][:account_id])
 
     # Guard: only manual accounts can be linked
@@ -55,4 +55,14 @@ class PriorbankAccountsController < ApplicationController
       redirect_to accounts_path, notice: t(".success"), status: :see_other
     end
   end
+
+  def sync_details
+    @sync = @priorbank_account.syncs.ordered.first
+  end
+
+  private
+
+    def set_priorbank_account
+      @priorbank_account = PriorbankAccount.find(params[:id])
+    end
 end

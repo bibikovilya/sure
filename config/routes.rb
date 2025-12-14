@@ -325,6 +325,7 @@ Rails.application.routes.draw do
       get :link
       post :link_account
       post :sync
+      get :sync_details
     end
   end
 

@@ -23,6 +23,7 @@ class PriorbankAccount::Syncer
     sync_step_update("complete", "Sync completed successfully!", "success")
   rescue => e
     sync_step_update("complete", "Sync failed: #{e.message}", "error")
+    raise e
   end
 
   def perform_post_sync

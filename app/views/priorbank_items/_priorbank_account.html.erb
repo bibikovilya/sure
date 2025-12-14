@@ -23,7 +23,12 @@
       <% end %>
     <% end %>
   </div>
-  <div class="flex items-center gap-8">
+  <div class="flex items-center gap-2">
+    <% if priorbank_account.last_synced_at %>
+      <%= link_to sync_details_priorbank_account_path(priorbank_account), data: { turbo_frame: "modal" }, class: "text-secondary hover:text-primary" do %>
+        <%= icon("info", size: "sm") %>
+      <% end %>
+    <% end %>
     <% if priorbank_account.syncing? %>
       <div class="w-16 h-6 bg-loader rounded-full animate-pulse"></div>
     <% else %>

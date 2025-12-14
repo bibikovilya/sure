@@ -85,8 +85,11 @@ class Priorbank::BrowserSession
     end
 
     def close_popup
-      while popup = page.at_css("div.k-widget.k-window") && popup.visible?
-        popup.at_css("span.k-i-close").click
+      until page.css("span.menu-item-parent").find { |menu| menu.text == "Мои продукты" }
+        popup = page.at_css("div.k-widget.k-window")
+        break unless popup&.visible?
+
+        popup.at_css("span.k-i-close").focus.click
         sync_update("popup", "Closed popup")
         sleep(0.1)
       end
