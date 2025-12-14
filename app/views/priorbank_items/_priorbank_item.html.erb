@@ -53,6 +53,11 @@
 
       <% unless priorbank_item.scheduled_for_deletion? %>
         <div class="flex items-center gap-2">
+          <% if priorbank_item.last_synced_at %>
+            <%= link_to sync_details_priorbank_item_path(priorbank_item), data: { turbo_frame: "modal" }, class: "text-secondary hover:text-primary" do %>
+              <%= icon("info", size: "sm") %>
+            <% end %>
+          <% end %>
           <%= icon(
             "refresh-cw",
             as_button: true,

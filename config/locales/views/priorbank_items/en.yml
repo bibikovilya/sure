@@ -27,3 +27,26 @@ en:
     priorbank_account:
       linked_to: "Linked to %{account}"
       syncing: Syncing...
+    sync_details_dialog:
+      title: "Sync Details - %{item_name}"
+      status_section: "Status"
+      timestamps_section: "Timestamps"
+      window_section: "Sync Window"
+      sync_stats_section: "Sync Statistics"
+      data_section: "Additional Data"
+      hierarchy_section: "Sync Hierarchy"
+      status: "Status"
+      error: "Error"
+      created_at: "Created"
+      pending_at: "Pending"
+      syncing_at: "Started Syncing"
+      completed_at: "Completed"
+      failed_at: "Failed"
+      window_start_date: "Window Start"
+      window_end_date: "Window End"
+      parent_sync: "Parent Sync"
+      child_syncs:
+        one: "Child Sync (%{count})"
+        other: "Child Syncs (%{count})"
+      no_sync_data: "No sync data available for this connection."
+      close: "Close"

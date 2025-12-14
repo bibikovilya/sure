@@ -1,5 +1,5 @@
 class PriorbankItemsController < ApplicationController
-  before_action :set_priorbank_item, only: [ :destroy, :sync ]
+  before_action :set_priorbank_item, only: [ :destroy, :sync, :sync_details ]
 
   def create
     login = priorbank_params[:login]
@@ -33,6 +33,10 @@ class PriorbankItemsController < ApplicationController
       format.html { redirect_back_or_to accounts_path }
       format.json { head :ok }
     end
+  end
+
+  def sync_details
+    @sync = @priorbank_item.syncs.ordered.first
   end
 
   private

@@ -316,6 +316,7 @@ Rails.application.routes.draw do
   resources :priorbank_items, only: %i[create destroy] do
     member do
       post :sync
+      get :sync_details
     end
   end
 
