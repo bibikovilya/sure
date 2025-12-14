@@ -22,6 +22,14 @@
         <%= icon("link", size: "sm") %>
       <% end %>
     <% end %>
+    <% if priorbank_account.account.present? && !priorbank_account.syncing? %>
+      <%= link_to sync_priorbank_account_path(priorbank_account),
+                  data: { turbo_method: :post },
+                  class: "group-hover/priorbank-account:flex hidden hover:opacity-80 items-center justify-center",
+                  title: t("accounts.sync.trigger") do %>
+        <%= icon("refresh-cw", size: "sm") %>
+      <% end %>
+    <% end %>
   </div>
   <div class="flex items-center gap-2">
     <% if priorbank_account.last_synced_at %>

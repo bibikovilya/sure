@@ -27,6 +27,8 @@ en:
         other_accounts: Other accounts
       new_account: New account
       sync: Sync all
+    sync:
+      trigger: Sync account
     sync_all:
       syncing: "Syncing accounts..."
     new:

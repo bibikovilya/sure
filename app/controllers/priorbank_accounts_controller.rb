@@ -1,5 +1,5 @@
 class PriorbankAccountsController < ApplicationController
-  before_action :set_priorbank_account, only: [ :link, :link_account, :sync_details ]
+  before_action :set_priorbank_account, only: [ :link, :link_account, :sync, :sync_details ]
 
   def link
     @available_accounts = Current.family.accounts
@@ -53,6 +53,17 @@ class PriorbankAccountsController < ApplicationController
       ] + Array(flash_notification_stream_items)
     else
       redirect_to accounts_path, notice: t(".success"), status: :see_other
+    end
+  end
+
+  def sync
+    unless @priorbank_account.syncing?
+      @priorbank_account.sync_later
+    end
+
+    respond_to do |format|
+      format.html { redirect_back_or_to accounts_path }
+      format.json { head :ok }
     end
   end
 
