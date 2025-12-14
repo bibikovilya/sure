@@ -222,19 +222,6 @@ class PriorbankItem::Syncer
 
     def mark_completed(sync)
       sync.complete!
-
-      # Broadcast UI updates
-      # begin
-      #   card_html = ApplicationController.render(
-      #     partial: "priorbank_items/priorbank_item",
-      #     formats: [ :html ],
-      #     locals: { priorbank_item: priorbank_item }
-      #   )
-      #   target_id = ActionView::RecordIdentifier.dom_id(priorbank_item)
-      #   Turbo::StreamsChannel.broadcast_replace_to(priorbank_item.family, target: target_id, html: card_html)
-      # rescue => e
-      #   Rails.logger.warn("PriorbankItem::Syncer broadcast failed: #{e.class} - #{e.message}")
-      # end
     end
 
     def mark_failed(sync, error)

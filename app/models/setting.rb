@@ -26,7 +26,6 @@ class Setting < RailsSettings::Base
   end
 
   field :onboarding_state, type: :string, default: DEFAULT_ONBOARDING_STATE
-
   field :require_invite_for_signup, type: :boolean, default: false
   field :require_email_confirmation, type: :boolean, default: ENV.fetch("REQUIRE_EMAIL_CONFIRMATION", "true") == "true"
 
