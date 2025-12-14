@@ -18,7 +18,7 @@ class PriorbankAccount::Syncer
     import_market_data
     materialize_balances(transfers)
 
-    sync.update(sync_stats: { imported_transactions: transactions.count, imported_transfers: transfers.count })
+    sync.update(sync_stats: { imported_transactions: transactions.ids.count, imported_transfers: transfers.ids.count })
 
     sync_step_update("complete", "Sync completed successfully!", "success")
   rescue => e
@@ -26,9 +26,7 @@ class PriorbankAccount::Syncer
   end
 
   def perform_post_sync
-    sync_step_update("post_sync", "Performing post-sync auto match transfers...")
     account.family.auto_match_transfers!
-    sync_step_update("post_sync", "Post-sync operations completed", "success")
   end
 
   private
@@ -46,7 +44,7 @@ class PriorbankAccount::Syncer
 
     def fetch_transactions
       window_start = sync.window_start_date || account.entries.maximum(:date) || 3.months.ago.to_date
-      window_end = sync.window_end_date || [ account.entries.maximum(:date) + 3.months, Date.current ].min
+      window_end = sync.window_end_date || [ window_start + 3.months, Date.current ].min
 
       sync_step_update("fetch_transactions", "Fetching transactions from #{window_start.strftime('%d.%m.%Y')} to #{window_end.strftime('%d.%m.%Y')}...")
 
@@ -98,8 +96,8 @@ class PriorbankAccount::Syncer
 
     def import_transactions(records)
       sync_step_update("import_transactions", "Saving to database...")
-      transactions = Transaction.import!(records[:transactions], recursive: true) if records[:transactions].any?
-      transfers = Transfer.import!(records[:transfers], recursive: true) if records[:transfers].any?
+      transactions = Transaction.import!(records[:transactions], recursive: true)
+      transfers = Transfer.import!(records[:transfers], recursive: true)
       sync_step_update("import_transactions", "Successfully imported transactions and transfers", "success")
       sync_data_update("imported_transactions", transactions)
       sync_data_update("imported_transfers", transfers)
