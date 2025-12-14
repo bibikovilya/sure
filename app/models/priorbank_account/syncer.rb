@@ -46,6 +46,8 @@ class PriorbankAccount::Syncer
     def fetch_transactions
       window_start = sync.window_start_date || account.entries.maximum(:date) || 3.months.ago.to_date
       window_end = sync.window_end_date || [ window_start + 3.months, Date.current ].min
+      sync_data_update("window_start_date", window_start)
+      sync_data_update("window_end_date", window_end)
 
       sync_step_update("fetch_transactions", "Fetching transactions from #{window_start.strftime('%d.%m.%Y')} to #{window_end.strftime('%d.%m.%Y')}...")
 

@@ -227,6 +227,17 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
     assert @sync.data["parsed_data"].present?
   end
 
+  test "stores window_start_date and window_end_date in sync.data" do
+    @syncer.perform_sync(@sync)
+
+    @sync.reload
+    assert @sync.data["window_start_date"].present?
+    assert @sync.data["window_end_date"].present?
+    assert @sync.data["window_start_date"].is_a?(Date)
+    assert @sync.data["window_end_date"].is_a?(Date)
+    assert @sync.data["window_end_date"] >= @sync.data["window_start_date"]
+  end
+
   private
 
     def sample_prior_csv
