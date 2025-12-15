@@ -13,6 +13,13 @@
         </p>
       </div>
       <p class="text-sm text-secondary truncate"><%= priorbank_account.account_type %> • <%= priorbank_account.account_number %></p>
+      <p class="text-sm text-secondary">
+        <% if priorbank_account.last_synced_at %>
+          <%= t(".status", timestamp: time_ago_in_words(priorbank_account.last_synced_at)) %>
+        <% elsif priorbank_account.account.present? %>
+          <%= t(".status_never") %>
+        <% end %>
+      </p>
     </div>
 
     <% if priorbank_account.account.blank? %>
@@ -37,7 +44,8 @@
       <% end %>
     <% end %>
     <% if priorbank_account.syncing? %>
-      <div class="w-16 h-6 bg-loader rounded-full animate-pulse"></div>
+      <%= icon "loader", size: "sm", class: "animate-spin" %>
+      <%= tag.span t(".syncing") %>
     <% else %>
       <p class="text-sm font-medium text-primary">
         <%= Money.new(priorbank_account.current_balance, priorbank_account.currency).format %>
