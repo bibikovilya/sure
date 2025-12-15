@@ -26,6 +26,10 @@ class Family::Syncer
 
   private
     def child_syncables
-      family.plaid_items + family.simplefin_items.active + family.lunchflow_items.active + family.accounts.manual
+      family.plaid_items +
+        family.simplefin_items.active +
+        family.lunchflow_items.active +
+        family.priorbank_items.active.map(&:linked_priorbank_accounts).flatten +
+        family.accounts.manual
     end
 end
