@@ -16,11 +16,12 @@ class PriorbankAccount::CsvParserTest < ActiveSupport::TestCase
   end
 
   test "parses transaction lines into structured data" do
-    parsed_data = @parser.parse(sample_prior_csv)
+    result = @parser.parse(sample_prior_csv)
 
-    assert_equal 3, parsed_data.count
+    assert_equal 3, result[:transactions].count
+    assert_kind_of Hash, result[:account_details]
 
-    first_transaction = parsed_data.first
+    first_transaction = result[:transactions].first
     assert_equal Date.new(2024, 3, 25), first_transaction[:date]
     assert_equal BigDecimal("900"), first_transaction[:amount]
     assert_equal "Поступление на контракт клиента 749114-00081-032913", first_transaction[:name]
@@ -38,11 +39,11 @@ class PriorbankAccount::CsvParserTest < ActiveSupport::TestCase
       Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
     CSV
 
-    parsed_data = @parser.parse(csv_with_various_amounts)
+    result = @parser.parse(csv_with_various_amounts)
 
-    assert_equal BigDecimal("-29.88"), parsed_data[0][:amount]
-    assert_equal BigDecimal("-3000.00"), parsed_data[1][:amount]
-    assert_equal BigDecimal("1234.56"), parsed_data[2][:amount]
+    assert_equal BigDecimal("-29.88"), result[:transactions][0][:amount]
+    assert_equal BigDecimal("-3000.00"), result[:transactions][1][:amount]
+    assert_equal BigDecimal("1234.56"), result[:transactions][2][:amount]
   end
 
   test "parses dates with time in Priorbank format" do
@@ -55,23 +56,24 @@ class PriorbankAccount::CsvParserTest < ActiveSupport::TestCase
       Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
     CSV
 
-    parsed_data = @parser.parse(csv_with_dates)
+    result = @parser.parse(csv_with_dates)
 
-    assert_equal Date.new(2024, 3, 29), parsed_data[0][:date]
-    assert_equal Date.new(2024, 1, 1), parsed_data[1][:date]
-    assert_equal Date.new(2024, 12, 31), parsed_data[2][:date]
+    assert_equal Date.new(2024, 3, 29), result[:transactions][0][:date]
+    assert_equal Date.new(2024, 1, 1), result[:transactions][1][:date]
+    assert_equal Date.new(2024, 12, 31), result[:transactions][2][:date]
   end
 
   test "stores full transaction line in notes for deduplication" do
-    parsed_data = @parser.parse(sample_prior_csv)
+    result = @parser.parse(sample_prior_csv)
 
-    assert_equal "25.03.2024 00:00:00,Поступление на контракт клиента 749114-00081-032913,900,00,BYN,25.03.2024,0,00,900,00,,,", parsed_data[0][:notes]
+    assert_equal "25.03.2024 00:00:00,Поступление на контракт клиента 749114-00081-032913,900,00,BYN,25.03.2024,0,00,900,00,,,", result[:transactions][0][:notes]
   end
 
   test "handles empty CSV gracefully" do
-    parsed_data = @parser.parse("")
+    result = @parser.parse("")
 
-    assert_equal 0, parsed_data.count
+    assert_equal 0, result[:transactions].count
+    assert_equal 0, result[:blocked_transactions].count
   end
 
   test "handles CSV with only headers" do
@@ -81,9 +83,9 @@ class PriorbankAccount::CsvParserTest < ActiveSupport::TestCase
       Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
     CSV
 
-    parsed_data = @parser.parse(headers_only)
+    result = @parser.parse(headers_only)
 
-    assert_equal 0, parsed_data.count
+    assert_equal 0, result[:transactions].count
   end
 
   test "handles CSV with multiple account sections" do
@@ -99,25 +101,25 @@ class PriorbankAccount::CsvParserTest < ActiveSupport::TestCase
       Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
     CSV
 
-    parsed_data = @parser.parse(multi_section_csv)
+    result = @parser.parse(multi_section_csv)
 
-    assert_equal 2, parsed_data.count
+    assert_equal 2, result[:transactions].count
   end
 
   test "handles malformed amounts gracefully" do
     csv_with_malformed = <<~CSV
       Операции по ........5333
       Дата транзакции,Операция,Сумма,Валюта,Дата операции по счету,Комиссия/Money-back,Обороты по счету,Цифровая карта,Категория операции,
-      29.03.2024 19:32:46,Test 1,"",BYN,29.03.2024,"0,00","",,,
-      29.03.2024 19:32:46,Test 2,"invalid",BYN,29.03.2024,"0,00","invalid",,,
+      29.03.2024 19:32:46,Test 1,"",BYN,29.03.2024,"0,00","",,,,
+      29.03.2024 19:32:46,Test 2,"invalid",BYN,29.03.2024,"0,00","invalid",,,,
       Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
     CSV
 
-    parsed_data = @parser.parse(csv_with_malformed)
+    result = @parser.parse(csv_with_malformed)
 
-    assert_equal 2, parsed_data.count
-    assert_equal BigDecimal(0), parsed_data[0][:amount]
-    assert_equal BigDecimal(0), parsed_data[1][:amount]
+    assert_equal 2, result[:transactions].count
+    assert_equal BigDecimal(0), result[:transactions][0][:amount]
+    assert_equal BigDecimal(0), result[:transactions][1][:amount]
   end
 
   test "handles malformed dates gracefully" do
@@ -129,18 +131,18 @@ class PriorbankAccount::CsvParserTest < ActiveSupport::TestCase
       Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
     CSV
 
-    parsed_data = @parser.parse(csv_with_malformed_dates)
+    result = @parser.parse(csv_with_malformed_dates)
 
     # Should default to current date when parsing fails
-    assert_equal 2, parsed_data.count
-    assert_equal Date.current, parsed_data[0][:date]
-    assert_equal Date.current, parsed_data[1][:date]
+    assert_equal 2, result[:transactions].count
+    assert_equal Date.current, result[:transactions][0][:date]
+    assert_equal Date.current, result[:transactions][1][:date]
   end
 
   test "uses account currency for all transactions" do
-    parsed_data = @parser.parse(sample_prior_csv)
+    result = @parser.parse(sample_prior_csv)
 
-    parsed_data.each do |transaction|
+    result[:transactions].each do |transaction|
       assert_equal @account.currency, transaction[:currency]
     end
   end
@@ -153,10 +155,10 @@ class PriorbankAccount::CsvParserTest < ActiveSupport::TestCase
       Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
     CSV
 
-    parsed_data = @parser.parse(csv_with_fees)
+    result = @parser.parse(csv_with_fees)
 
-    assert_equal 1, parsed_data.count
-    assert_equal BigDecimal("-1.08"), parsed_data[0][:amount]
+    assert_equal 1, result[:transactions].count
+    assert_equal BigDecimal("-1.08"), result[:transactions][0][:amount]
   end
 
   test "handles other currency transactions (non-BYN)" do
@@ -167,13 +169,107 @@ class PriorbankAccount::CsvParserTest < ActiveSupport::TestCase
       Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
     CSV
 
-    parsed_data = @parser.parse(csv_with_other_currency)
+    result = @parser.parse(csv_with_other_currency)
 
-    assert_equal 1, parsed_data.count
+    assert_equal 1, result[:transactions].count
     # Should use "Обороты по счету" column which has the converted amount
-    assert_equal BigDecimal("-10.02"), parsed_data[0][:amount]
+    assert_equal BigDecimal("-10.02"), result[:transactions][0][:amount]
     # Currency should still be account currency (BYN)
-    assert_equal "BYN", parsed_data[0][:currency]
+    assert_equal "BYN", result[:transactions][0][:currency]
+  end
+
+  test "extracts account details from CSV" do
+    result = @parser.parse(sample_prior_csv)
+
+    assert_kind_of Hash, result[:account_details]
+    assert_equal BigDecimal("16.44"), result[:account_details][:available_amount]
+    assert_equal BigDecimal("3.80"), result[:account_details][:blocked_amount]
+    assert_equal BigDecimal("0"), result[:account_details][:credit_limit]
+  end
+
+  test "handles missing account details gracefully" do
+    csv_without_details = <<~CSV
+      Операции по ........5333
+      Дата транзакции,Операция,Сумма,Валюта,Дата операции по счету,Комиссия/Money-back,Обороты по счету,Цифровая карта,Категория операции,
+      29.03.2024 19:32:46,Test,"100,00",BYN,29.03.2024,"0,00","100,00",,,
+      Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
+    CSV
+
+    result = @parser.parse(csv_without_details)
+
+    assert_kind_of Hash, result[:account_details]
+    assert_nil result[:account_details][:available_amount]
+    assert_nil result[:account_details][:blocked_amount]
+    assert_nil result[:account_details][:credit_limit]
+  end
+
+  test "extracts blocked transactions section" do
+    result = @parser.parse(sample_prior_csv)
+
+    assert_equal 1, result[:blocked_transactions].count
+
+    blocked_tx = result[:blocked_transactions].first
+    assert_equal Date.new(2024, 8, 15), blocked_tx[:date]
+    assert_equal BigDecimal("14.80"), blocked_tx[:amount]
+    assert_equal "Retail BLR MINSK ROSE CAFE", blocked_tx[:name]
+    assert_equal "BYN", blocked_tx[:currency]
+    assert_equal true, blocked_tx[:blocked]
+  end
+
+  test "handles CSV without blocked transactions" do
+    csv_without_blocked = <<~CSV
+      Операции по ........5333
+      Дата транзакции,Операция,Сумма,Валюта,Дата операции по счету,Комиссия/Money-back,Обороты по счету,Цифровая карта,Категория операции,
+      29.03.2024 19:32:46,Test,"100,00",BYN,29.03.2024,"0,00","100,00",,,
+      Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
+    CSV
+
+    result = @parser.parse(csv_without_blocked)
+
+    assert_equal 0, result[:blocked_transactions].count
+  end
+
+  test "parses multiple blocked transactions" do
+    csv_with_multiple_blocked = <<~CSV
+      Доступная сумма:,"168,75",
+      Заблокировано:,"300,00",
+      Кредитный лимит:,"0,00",
+
+      Операции по ........5333
+      Дата транзакции,Операция,Сумма,Валюта,Дата операции по счету,Комиссия/Money-back,Обороты по счету,Цифровая карта,Категория операции,
+      29.03.2024 19:32:46,Test,"100,00",BYN,29.03.2024,"0,00","100,00",,,
+      Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
+
+      Заблокированные суммы по ........4714
+      Дата транзакции,Транзакция,Сумма транзакции,Валюта,Сумма блокировки,Валюта,Цифровая карта,Категория операции,
+      13.12.2025 04:42:20,Retail LVA +37160003355 TICKETSHOP,"156,80",EUR,"156,80",EUR,,Развлечения,
+      14.12.2025 10:30:15,Online Payment STEAM,"143,20",EUR,"143,20",EUR,,Цифровые товары,
+    CSV
+
+    result = @parser.parse(csv_with_multiple_blocked)
+
+    assert_equal 2, result[:blocked_transactions].count
+    assert_equal BigDecimal("156.80"), result[:blocked_transactions][0][:amount]
+    assert_equal BigDecimal("143.20"), result[:blocked_transactions][1][:amount]
+    assert result[:blocked_transactions].all? { |tx| tx[:blocked] == true }
+  end
+
+  test "blocked transactions use correct currency" do
+    csv_with_blocked_eur = <<~CSV
+      Операции по ........4714
+      Дата транзакции,Операция,Сумма,Валюта,Дата операции по счету,Комиссия/Money-back,Обороты по счету,Цифровая карта,Категория операции,
+      13.12.2025 16:23:44,CH Payment,"150,00",EUR,13.12.2025,"0,00","150,00",,Поставщик услуг,
+      Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
+
+      Заблокированные суммы по ........4714
+      Дата транзакции,Транзакция,Сумма транзакции,Валюта,Сумма блокировки,Валюта,Цифровая карта,Категория операции,
+      13.12.2025 04:42:20,Retail LVA TICKETSHOP,"156,80",EUR,"156,80",EUR,,Развлечения,
+    CSV
+
+    result = @parser.parse(csv_with_blocked_eur)
+
+    assert_equal 1, result[:blocked_transactions].count
+    assert_equal "EUR", result[:blocked_transactions][0][:currency]
   end
 
   private

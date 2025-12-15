@@ -145,7 +145,9 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
   test "perform_sync handles errors gracefully" do
     PriorbankAccount::StatementDownloader.any_instance.stubs(:call).raises(StandardError.new("Download failed"))
 
-    @syncer.perform_sync(@sync)
+    assert_raises(StandardError) do
+      @syncer.perform_sync(@sync)
+    end
 
     @sync.reload
     error_message = @sync.data["steps"].find { |p| p["status"] == "error" }
@@ -224,7 +226,6 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
     @sync.reload
     assert @sync.data.present?
     assert @sync.data["fixed_csv_data"].present?
-    assert @sync.data["parsed_data"].present?
   end
 
   test "stores window_start_date and window_end_date in sync.data" do
@@ -233,9 +234,101 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
     @sync.reload
     assert @sync.data["window_start_date"].present?
     assert @sync.data["window_end_date"].present?
-    assert @sync.data["window_start_date"].is_a?(Date)
-    assert @sync.data["window_end_date"].is_a?(Date)
-    assert @sync.data["window_end_date"] >= @sync.data["window_start_date"]
+    assert Date.parse(@sync.data["window_start_date"]).is_a?(Date)
+    assert Date.parse(@sync.data["window_end_date"]).is_a?(Date)
+    assert Date.parse(@sync.data["window_end_date"]) >= Date.parse(@sync.data["window_start_date"])
+  end
+
+  test "stores account_details in sync.data" do
+    @syncer.perform_sync(@sync)
+
+    @sync.reload
+    assert @sync.data["account_details"].present?
+    assert_kind_of Hash, @sync.data["account_details"]
+    assert_equal "16.44", @sync.data["account_details"]["available_amount"]
+    assert_equal "3.8", @sync.data["account_details"]["blocked_amount"]
+    assert_equal "0.0", @sync.data["account_details"]["credit_limit"]
+  end
+
+  test "stores blocked_transactions in sync.data" do
+    @syncer.perform_sync(@sync)
+
+    @sync.reload
+    assert @sync.data["blocked_transactions"].present?
+    assert_kind_of Array, @sync.data["blocked_transactions"]
+    assert_equal 1, @sync.data["blocked_transactions"].count
+
+    # Verify blocked transaction structure
+    blocked_tx = @sync.data["blocked_transactions"].first
+    assert_equal "Retail BLR MINSK ROSE CAFE", blocked_tx["name"]
+    assert_equal "14.8", blocked_tx["amount"]
+    assert_equal true, blocked_tx["blocked"]
+    assert_equal "BYN", blocked_tx["currency"]
+  end
+
+  test "stores transactions in sync.data" do
+    @syncer.perform_sync(@sync)
+
+    @sync.reload
+    assert @sync.data["transactions"].present?
+    assert_kind_of Array, @sync.data["transactions"]
+    assert_equal 3, @sync.data["transactions"].count
+
+    # Verify transaction structure
+    first_tx = @sync.data["transactions"].first
+    assert first_tx["name"].present?
+    assert first_tx["amount"].present?
+    assert first_tx["date"].present?
+    assert first_tx["currency"].present?
+    assert first_tx["notes"].present?
+  end
+
+  test "stores transactions and blocked_transactions separately" do
+    @syncer.perform_sync(@sync)
+
+    @sync.reload
+
+    # Verify they are separate arrays
+    assert_not_equal @sync.data["transactions"], @sync.data["blocked_transactions"]
+
+    # Verify blocked transactions are marked with blocked flag
+    assert @sync.data["blocked_transactions"].all? { |tx| tx["blocked"] == true }
+
+    # Verify regular transactions don't have blocked flag (or it's false)
+    assert @sync.data["transactions"].none? { |tx| tx["blocked"] == true }
+  end
+
+  test "handles CSV with no blocked transactions" do
+    csv_without_blocked = <<~CSV
+      Операции по ........5333
+      Дата транзакции,Операция,Сумма,Валюта,Дата операции по счету,Комиссия/Money-back,Обороты по счету,Цифровая карта,Категория операции,
+      29.03.2024 19:32:46,Test Transaction,"100,00",BYN,29.03.2024,"0,00","100,00",,,
+      Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
+    CSV
+
+    stub_statement_download(csv_without_blocked)
+
+    @syncer.perform_sync(@sync)
+
+    @sync.reload
+    assert_equal [], @sync.data["blocked_transactions"]
+    assert @sync.data["transactions"].count > 0
+  end
+
+  test "handles CSV with no account details" do
+    csv_without_details = <<~CSV
+      Операции по ........5333
+      Дата транзакции,Операция,Сумма,Валюта,Дата операции по счету,Комиссия/Money-back,Обороты по счету,Цифровая карта,Категория операции,
+      29.03.2024 19:32:46,Test Transaction,"100,00",BYN,29.03.2024,"0,00","100,00",,,
+      Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
+    CSV
+
+    stub_statement_download(csv_without_details)
+
+    @syncer.perform_sync(@sync)
+
+    @sync.reload
+    assert @sync.data["account_details"].blank?
   end
 
   private

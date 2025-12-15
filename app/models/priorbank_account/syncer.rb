@@ -12,7 +12,7 @@ class PriorbankAccount::Syncer
 
     csv_data = fetch_transactions
     parsed_data = parse_csv(csv_data)
-    records = build_transactions(parsed_data)
+    records = build_transactions(parsed_data[:transactions])
     transactions, transfers = import_transactions(records)
 
     import_market_data
@@ -77,17 +77,21 @@ class PriorbankAccount::Syncer
     def parse_csv(csv_data)
       sync_step_update("import_transactions", "Parsing transactions...")
       parsed_data = PriorbankAccount::CsvParser.new(account).parse(csv_data)
-      sync_step_update("import_transactions", "Found #{parsed_data.count} transactions")
-      sync_data_update("parsed_data", parsed_data)
+
+      sync_step_update("import_transactions", "Found #{parsed_data[:transactions].count} transactions and #{parsed_data[:blocked_transactions].count} blocked transactions")
+      sync_data_update("account_details", parsed_data[:account_details])
+      sync_data_update("blocked_transactions", parsed_data[:blocked_transactions])
+      sync_data_update("transactions", parsed_data[:transactions])
+
       parsed_data
     rescue => e
       sync_step_update("import_transactions", "Error parsing transactions: #{e.message}", "error")
       raise
     end
 
-    def build_transactions(parsed_data)
+    def build_transactions(transactions)
       sync_step_update("import_transactions", "Building transactions...")
-      records = PriorbankAccount::TransactionBuilder.new(account).build_from_parsed_data(parsed_data)
+      records = PriorbankAccount::TransactionBuilder.new(account).build_from_parsed_data(transactions)
       sync_step_update("import_transactions", "Built #{records[:transactions].count} transactions and #{records[:transfers].count} transfers")
       sync_data_update("built_entries", records[:transactions].map { it.entry })
       sync_data_update("built_transfers", records[:transfers].map { |it| [ it.outflow_transaction.entry, it.inflow_transaction.entry ] }.flatten)
