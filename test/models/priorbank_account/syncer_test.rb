@@ -25,6 +25,9 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
     # Common stubs used across tests
     stub_statement_download
     stub_market_data_import
+    stub_balance_materialization
+    stub_holdings_materialization
+    stub_auto_match_transfers
   end
 
   def stub_statement_download(csv_data = sample_prior_csv)
@@ -40,6 +43,21 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
 
   def stub_market_data_import
     Account::MarketDataImporter.any_instance.stubs(:import_all)
+  end
+
+  def stub_balance_materialization
+    # Skip expensive balance materialization in tests
+    Balance::Materializer.any_instance.stubs(:materialize_balances)
+  end
+
+  def stub_holdings_materialization
+    # Skip expensive holdings materialization in tests
+    Holding::Materializer.any_instance.stubs(:materialize_holdings).returns([])
+  end
+
+  def stub_auto_match_transfers
+    # Skip expensive transfer matching in tests
+    Family.any_instance.stubs(:auto_match_transfers!)
   end
 
   test "perform_sync executes all sync steps successfully" do
@@ -186,6 +204,7 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
   end
 
   test "perform_sync materializes balances for account" do
+    Balance::Materializer.any_instance.unstub(:materialize_balances)
     Balance::Materializer.any_instance.expects(:materialize_balances).at_least_once
 
     @syncer.perform_sync(@sync)
@@ -202,12 +221,14 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
     stub_statement_download(atm_csv)
 
     # Should materialize balances for both main account and created cash account
+    Balance::Materializer.any_instance.unstub(:materialize_balances)
     Balance::Materializer.any_instance.expects(:materialize_balances).twice
 
     @syncer.perform_sync(@sync)
   end
 
   test "perform_post_sync calls auto_match_transfers on family" do
+    Family.any_instance.unstub(:auto_match_transfers!)
     Family.any_instance.expects(:auto_match_transfers!).once
 
     @syncer.perform_post_sync
