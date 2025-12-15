@@ -163,6 +163,36 @@ class PriorbankAccount::TransactionBuilderTest < ActiveSupport::TestCase
     assert_equal 1, result[:transactions].count
   end
 
+  test "filters duplicates with trailing spaces in notes" do
+    # Create an existing transaction with trailing spaces in notes
+    # This simulates old data that wasn't normalized
+    Entry.create!(
+      account: @account,
+      date: Date.new(2024, 10, 2),
+      amount: BigDecimal("8.00"),
+      name: "Retail HKG Hong Kong SmartGlocal",
+      currency: "EUR",
+      notes: "02.10.2025 00:00:00,Retail HKG Hong Kong SmartGlocal  ,-8,00,EUR,03.10.2025,0,00,-8,00,,Цифровые товары,",
+      entryable: Transaction.new
+    )
+
+    # Try to create same transaction but with normalized notes (no trailing spaces)
+    parsed_data = [
+      {
+        date: Date.new(2024, 10, 2),
+        amount: BigDecimal("-8.00"),
+        name: "Retail HKG Hong Kong SmartGlocal",
+        currency: "EUR",
+        notes: "02.10.2025 00:00:00,Retail HKG Hong Kong SmartGlocal,-8,00,EUR,03.10.2025,0,00,-8,00,,Цифровые товары,"
+      }
+    ]
+
+    result = @builder.build_from_parsed_data(parsed_data)
+
+    # Should filter as duplicate despite trailing space difference
+    assert_equal 0, result[:transactions].count
+  end
+
   test "prevents duplicate processing within same batch" do
     parsed_data = [
       regular_transaction_data,

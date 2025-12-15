@@ -42,8 +42,14 @@ class PriorbankAccount::TransactionBuilder
       )
 
       # Additional check: if duplicate found, verify notes match exactly
-      # This is stronger than the default adapter logic
-      duplicate.present? && duplicate.notes == data[:notes]
+      # Normalize both sides by splitting and rejoining to handle trailing spaces in CSV fields
+      return false if duplicate.nil?
+
+      normalize_notes(duplicate.notes) == normalize_notes(data[:notes])
+    end
+
+    def normalize_notes(notes)
+      notes.to_s.split(",").map(&:strip).join(",")
     end
 
     def atm_withdrawal?(data)
