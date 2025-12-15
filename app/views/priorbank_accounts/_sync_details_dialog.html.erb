@@ -32,55 +32,55 @@
           <dl class="space-y-2">
             <div class="flex justify-between py-2 border-b border-secondary">
               <dt class="text-sm text-secondary"><%= t(".created_at") %></dt>
-              <dd class="text-sm text-primary"><%= l(sync.created_at, format: :long) %></dd>
+              <dd class="text-sm text-primary"><%= sync.created_at.strftime('%B %d, %Y %H:%M:%S') %></dd>
             </div>
 
             <% if sync.pending_at.present? %>
               <div class="flex justify-between py-2 border-b border-secondary">
                 <dt class="text-sm text-secondary"><%= t(".pending_at") %></dt>
-                <dd class="text-sm text-primary"><%= l(sync.pending_at, format: :long) %></dd>
+                <dd class="text-sm text-primary"><%= sync.pending_at.strftime('%B %d, %Y %H:%M:%S') %></dd>
               </div>
             <% end %>
 
             <% if sync.syncing_at.present? %>
               <div class="flex justify-between py-2 border-b border-secondary">
                 <dt class="text-sm text-secondary"><%= t(".syncing_at") %></dt>
-                <dd class="text-sm text-primary"><%= l(sync.syncing_at, format: :long) %></dd>
+                <dd class="text-sm text-primary"><%= sync.syncing_at.strftime('%B %d, %Y %H:%M:%S') %></dd>
               </div>
             <% end %>
 
             <% if sync.completed_at.present? %>
               <div class="flex justify-between py-2 border-b border-secondary">
                 <dt class="text-sm text-secondary"><%= t(".completed_at") %></dt>
-                <dd class="text-sm text-primary"><%= l(sync.completed_at, format: :long) %></dd>
+                <dd class="text-sm text-primary"><%= sync.completed_at.strftime('%B %d, %Y %H:%M:%S') %></dd>
               </div>
             <% end %>
 
             <% if sync.failed_at.present? %>
               <div class="flex justify-between py-2 border-b border-secondary">
                 <dt class="text-sm text-secondary"><%= t(".failed_at") %></dt>
-                <dd class="text-sm text-destructive"><%= l(sync.failed_at, format: :long) %></dd>
+                <dd class="text-sm text-destructive"><%= sync.failed_at.strftime('%B %d, %Y %H:%M:%S') %></dd>
               </div>
             <% end %>
           </dl>
         </div>
 
         <%# Window Section %>
-        <% if sync.window_start_date.present? || sync.window_end_date.present? %>
+        <% if sync.data.present? && (sync.data["window_start_date"].present? || sync.data["window_end_date"].present?) %>
           <div>
             <h3 class="text-sm font-medium text-primary mb-3"><%= t(".window_section") %></h3>
             <dl class="space-y-2">
-              <% if sync.window_start_date.present? %>
+              <% if sync.data["window_start_date"].present? %>
                 <div class="flex justify-between py-2 border-b border-secondary">
                   <dt class="text-sm text-secondary"><%= t(".window_start_date") %></dt>
-                  <dd class="text-sm text-primary"><%= l(sync.window_start_date) %></dd>
+                  <dd class="text-sm text-primary"><%= l(Date.parse(sync.data["window_start_date"])) %></dd>
                 </div>
               <% end %>
 
-              <% if sync.window_end_date.present? %>
+              <% if sync.data["window_end_date"].present? %>
                 <div class="flex justify-between py-2 border-b border-secondary">
                   <dt class="text-sm text-secondary"><%= t(".window_end_date") %></dt>
-                  <dd class="text-sm text-primary"><%= l(sync.window_end_date) %></dd>
+                  <dd class="text-sm text-primary"><%= l(Date.parse(sync.data["window_end_date"])) %></dd>
                 </div>
               <% end %>
             </dl>
@@ -95,21 +95,97 @@
               <% sync.sync_stats.each do |key, value| %>
                 <div class="flex justify-between py-2 border-b border-secondary">
                   <dt class="text-sm text-secondary"><%= key.humanize %></dt>
-                  <dd class="text-sm text-primary"><%= value.is_a?(Hash) || value.is_a?(Array) ? value.to_json : value %></dd>
+                  <dd class="text-sm font-medium text-primary"><%= value %></dd>
                 </div>
               <% end %>
             </dl>
           </div>
         <% end %>
 
-        <%# Data Section %>
-        <% if sync.data.present? && sync.data.any? %>
+        <%# Transaction Details %>
+        <% if sync.data.present? && sync.data["transactions"].present? && sync.data["transactions"].any? %>
           <div>
-            <h3 class="text-sm font-medium text-primary mb-3"><%= t(".data_section") %></h3>
-            <div class="bg-container-inset rounded-lg p-3 max-h-60 overflow-auto">
-              <pre class="text-xs text-primary"><%= JSON.pretty_generate(sync.data) %></pre>
+            <h3 class="text-sm font-medium text-primary mb-3"><%= t(".transactions_section", count: sync.data["transactions"].count) %></h3>
+            <div class="space-y-2 max-h-64 overflow-y-auto">
+              <% sync.data["transactions"].first(5).each do |transaction| %>
+                <div class="flex justify-between items-start py-2 px-3 bg-container-inset rounded">
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-primary truncate"><%= transaction["name"] %></p>
+                    <p class="text-xs text-secondary"><%= transaction["date"] %></p>
+                  </div>
+                  <p class="text-sm font-medium <%= transaction["amount"].to_f >= 0 ? 'text-success' : 'text-primary' %> ml-2">
+                    <%= Money.new(transaction["amount"].to_f, transaction["currency"]).format %>
+                  </p>
+                </div>
+              <% end %>
+              <% if sync.data["transactions"].count > 5 %>
+                <p class="text-xs text-secondary text-center py-2">
+                  <%= t(".more_transactions", count: sync.data["transactions"].count - 5) %>
+                </p>
+              <% end %>
             </div>
           </div>
+        <% end %>
+
+        <%# Sync Steps Section %>
+        <% if sync.data.present? && sync.data["steps"].present? && sync.data["steps"].any? %>
+          <details class="group">
+            <summary class="cursor-pointer list-none">
+              <h3 class="text-sm font-medium text-primary mb-3 inline-flex items-center gap-2">
+                <%= t(".steps_section") %>
+                <%= icon('chevron-down', size: 'sm', class: 'group-open:rotate-180 transition-transform') %>
+              </h3>
+            </summary>
+            <div class="space-y-1 max-h-96 overflow-y-auto">
+              <% sync.data["steps"].each_with_index do |step, index| %>
+                <div class="flex items-start gap-2 py-2 px-3 rounded <%= step['status'] == 'error' ? 'bg-destructive/5' : step['status'] == 'success' ? 'bg-success/5' : 'bg-container-inset' %>">
+                  <div class="flex-shrink-0 mt-0.5">
+                    <% if step['status'] == 'success' %>
+                      <%= icon('check-circle', size: 'sm', class: 'text-success') %>
+                    <% elsif step['status'] == 'error' %>
+                      <%= icon('x-circle', size: 'sm', class: 'text-destructive') %>
+                    <% elsif step['status'] == 'in_progress' %>
+                      <%= icon('loader', size: 'sm', class: 'text-warning') %>
+                    <% else %>
+                      <%= icon('circle', size: 'sm', class: 'text-secondary') %>
+                    <% end %>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-start justify-between gap-2">
+                      <p class="text-xs font-medium <%= step['status'] == 'error' ? 'text-destructive' : 'text-primary' %>">
+                        <%= step['step'].humanize %>
+                      </p>
+                      <% if step['timestamp'].present? %>
+                        <time class="text-xs text-secondary whitespace-nowrap">
+                          <%= Time.parse(step['timestamp']).strftime('%H:%M:%S') rescue step['timestamp'] %>
+                        </time>
+                      <% end %>
+                    </div>
+                    <% if step['message'].present? %>
+                      <p class="text-xs <%= step['status'] == 'error' ? 'text-destructive' : 'text-secondary' %> mt-0.5">
+                        <%= step['message'] %>
+                      </p>
+                    <% end %>
+                  </div>
+                </div>
+              <% end %>
+            </div>
+          </details>
+        <% end %>
+
+        <%# Raw Data Section (collapsed by default) %>
+        <% if sync.data.present? && sync.data.any? %>
+          <details class="group">
+            <summary class="cursor-pointer list-none">
+              <h3 class="text-sm font-medium text-primary mb-3 inline-flex items-center gap-2">
+                <%= t(".raw_data_section") %>
+                <%= icon('chevron-down', size: 'sm', class: 'group-open:rotate-180 transition-transform') %>
+              </h3>
+            </summary>
+            <div class="bg-container-inset rounded-lg p-3 max-h-60 overflow-auto mt-2">
+              <pre class="text-xs text-primary"><%= JSON.pretty_generate(sync.data) %></pre>
+            </div>
+          </details>
         <% end %>
 
         <%# Parent/Children Info %>

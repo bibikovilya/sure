@@ -14,10 +14,22 @@
       </div>
       <p class="text-sm text-secondary truncate"><%= priorbank_account.account_type %> • <%= priorbank_account.account_number %></p>
       <p class="text-sm text-secondary">
-        <% if priorbank_account.last_synced_at %>
-          <%= t(".status", timestamp: time_ago_in_words(priorbank_account.last_synced_at)) %>
-        <% elsif priorbank_account.account.present? %>
-          <%= t(".status_never") %>
+        <% if priorbank_account.syncing? %>
+          <div class="flex items-center gap-1">
+            <%= icon "loader", size: "sm", class: "animate-spin" %>
+            <%= tag.span t(".syncing") %>
+          </div>
+        <% elsif priorbank_account.sync_error.present? %>
+          <div class="flex items-center gap-1">
+            <%= render DS::Tooltip.new(text: priorbank_account.sync_error, icon: "alert-circle", size: "sm", color: "destructive") %>
+            <%= tag.span t(".error"), class: "text-destructive" %>
+          </div>
+        <% else %>
+          <% if priorbank_account.last_synced_at %>
+            <%= t(".status", timestamp: time_ago_in_words(priorbank_account.last_synced_at)) %>
+          <% elsif priorbank_account.account.present? %>
+            <%= t(".status_never") %>
+          <% end %>
         <% end %>
       </p>
     </div>
@@ -31,7 +43,7 @@
     <% end %>
   </div>
   <div class="flex items-center gap-2">
-    <% if priorbank_account.last_synced_at %>
+    <% if priorbank_account.last_synced_at || priorbank_account.sync_error %>
       <%= link_to sync_details_priorbank_account_path(priorbank_account), data: { turbo_frame: "modal" } do %>
         <%= icon("info", as_button: true, size: :sm) %>
       <% end %>
@@ -43,13 +55,8 @@
         <%= icon("refresh-cw", as_button: true, size: :sm) %>
       <% end %>
     <% end %>
-    <% if priorbank_account.syncing? %>
-      <%= icon "loader", size: "sm", class: "animate-spin" %>
-      <%= tag.span t(".syncing") %>
-    <% else %>
-      <p class="text-sm font-medium text-primary">
-        <%= Money.new(priorbank_account.current_balance, priorbank_account.currency).format %>
-      </p>
-    <% end %>
+    <p class="text-sm font-medium text-primary">
+      <%= Money.new(priorbank_account.current_balance, priorbank_account.currency).format %>
+    </p>
   </div>
 </div>

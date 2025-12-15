@@ -28,14 +28,22 @@ en:
       linked_to: "Linked to %{account}"
       status: "Last synced %{timestamp} ago"
       status_never: "Never synced"
+      error: "Error occurred"
       syncing: Syncing...
     sync_details_dialog:
       title: "Sync Details - %{item_name}"
       status_section: "Status"
+      steps_section: "Sync Steps"
       timestamps_section: "Timestamps"
       window_section: "Sync Window"
       sync_stats_section: "Sync Statistics"
-      data_section: "Additional Data"
+      transactions_section:
+        one: "Transaction (%{count})"
+        other: "Transactions (%{count})"
+      more_transactions:
+        one: "and %{count} more transaction"
+        other: "and %{count} more transactions"
+      raw_data_section: "Raw Data"
       hierarchy_section: "Sync Hierarchy"
       status: "Status"
       error: "Error"
