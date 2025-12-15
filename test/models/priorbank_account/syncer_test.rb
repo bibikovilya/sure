@@ -28,6 +28,11 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
   end
 
   def stub_statement_download(csv_data = sample_prior_csv)
+    browser_session_mock = mock()
+    browser_session_mock.stubs(:login_and_navigate_to_cards)
+    browser_session_mock.stubs(:page).returns(mock())
+    browser_session_mock.stubs(:quit)
+    Priorbank::BrowserSession.stubs(:new).returns(browser_session_mock)
     PriorbankAccount::StatementDownloader.any_instance.stubs(:call).returns("/tmp/test.csv")
     PriorbankAccount::StatementDownloader.any_instance.stubs(:teardown)
     Utils::CsvEncodingFixer.stubs(:convert_file).returns(csv_data)
@@ -329,6 +334,44 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
 
     @sync.reload
     assert @sync.data["account_details"].blank?
+  end
+
+  test "updates priorbank_account current_balance from account_details" do
+    assert_nil @priorbank_account.current_balance
+
+    @syncer.perform_sync(@sync)
+
+    @priorbank_account.reload
+    assert_equal BigDecimal("16.44"), @priorbank_account.current_balance
+  end
+
+  test "update_current_balance handles missing available_amount" do
+    csv_without_balance = <<~CSV
+      Операции по ........5333
+      Дата транзакции,Операция,Сумма,Валюта,Дата операции по счету,Комиссия/Money-back,Обороты по счету,Цифровая карта,Категория операции,
+      29.03.2024 19:32:46,Test Transaction,"100,00",BYN,29.03.2024,"0,00","100,00",,,
+      Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
+    CSV
+    original_balance = BigDecimal("50.00")
+    @priorbank_account.update!(current_balance: original_balance)
+
+    stub_statement_download(csv_without_balance)
+
+    @syncer.perform_sync(@sync)
+
+    @priorbank_account.reload
+    assert_equal original_balance, @priorbank_account.current_balance
+  end
+
+  test "update_current_balance logs progress step" do
+    @syncer.perform_sync(@sync)
+
+    @sync.reload
+    balance_update_step = @sync.data["steps"].find { |p| p["step"] == "update_balance" }
+
+    assert balance_update_step.present?
+    assert_equal "success", balance_update_step["status"]
+    assert_includes balance_update_step["message"], "16.44"
   end
 
   private

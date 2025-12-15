@@ -12,6 +12,7 @@ class PriorbankAccount::Syncer
 
     csv_data = fetch_transactions
     parsed_data = parse_csv(csv_data)
+    update_current_balance(parsed_data[:account_details])
     records = build_transactions(parsed_data[:transactions])
     transactions, transfers = import_transactions(records)
 
@@ -86,6 +87,16 @@ class PriorbankAccount::Syncer
       parsed_data
     rescue => e
       sync_step_update("import_transactions", "Error parsing transactions: #{e.message}", "error")
+      raise
+    end
+
+    def update_current_balance(account_details)
+      return unless account_details[:available_amount].present?
+
+      priorbank_account.update!(current_balance: account_details[:available_amount])
+      sync_step_update("update_balance", "Updated current balance to #{account_details[:available_amount]}", "success")
+    rescue => e
+      sync_step_update("update_balance", "Error updating current balance: #{e.message}", "error")
       raise
     end
 
