@@ -54,8 +54,8 @@
       <% unless priorbank_item.scheduled_for_deletion? %>
         <div class="flex items-center gap-2">
           <% if priorbank_item.last_synced_at %>
-            <%= link_to sync_details_priorbank_item_path(priorbank_item), data: { turbo_frame: "modal" }, class: "text-secondary hover:text-primary" do %>
-              <%= icon("info", size: "sm") %>
+            <%= link_to sync_details_priorbank_item_path(priorbank_item), data: { turbo_frame: "modal" } do %>
+              <%= icon("info", as_button: true) %>
             <% end %>
           <% end %>
           <%= icon(
