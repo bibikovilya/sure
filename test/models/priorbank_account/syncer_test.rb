@@ -395,6 +395,46 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
     assert_includes balance_update_step["message"], "16.44"
   end
 
+  test "uses last completed sync window_end_date when account has no transactions" do
+    Sync.create!(
+      syncable: @priorbank_account,
+      status: "completed",
+      window_start_date: Date.new(2024, 1, 1),
+      window_end_date: Date.new(2024, 3, 31)
+    )
+
+    assert_equal 0, @account.entries.count
+
+    expected_start = Date.new(2024, 3, 31)
+    expected_end = expected_start + 3.months
+
+    downloader_mock = mock()
+    downloader_mock.expects(:call).returns("/tmp/test.csv")
+    downloader_mock.expects(:teardown)
+
+    PriorbankAccount::StatementDownloader.expects(:new).with(
+      expected_start,
+      expected_end,
+      @priorbank_account.name,
+      has_entries(headless: true, sync: @sync)
+    ).returns(downloader_mock)
+
+    @syncer.perform_sync(@sync)
+
+    @sync.reload
+    assert_equal expected_start, @sync.window_start_date
+    assert_equal expected_end, @sync.window_end_date
+  end
+
+  test "saves window dates to sync record" do
+    @syncer.perform_sync(@sync)
+
+    @sync.reload
+    assert @sync.window_start_date.present?
+    assert @sync.window_end_date.present?
+    assert @sync.window_end_date >= @sync.window_start_date
+  end
+
   private
 
     def sample_prior_csv

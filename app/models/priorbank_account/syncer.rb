@@ -10,6 +10,7 @@ class PriorbankAccount::Syncer
     @sync = sync
     sync_step_update("start", "Starting Priorbank account #{account.id} - #{account.name} sync...")
 
+    calculate_and_save_window
     csv_data = fetch_transactions
     parsed_data = parse_csv(csv_data)
     update_current_balance(parsed_data[:account_details])
@@ -33,6 +34,30 @@ class PriorbankAccount::Syncer
 
   private
 
+    def calculate_and_save_window
+      window_start = calculate_window_start
+      window_end = sync.window_end_date || [ window_start + 3.months, Date.current ].min
+
+      sync.update!(window_start_date: window_start, window_end_date: window_end)
+      sync_data_update("window_start_date", window_start)
+      sync_data_update("window_end_date", window_end)
+    end
+
+    def calculate_window_start
+      # If sync has explicit window_start_date, use it
+      return sync.window_start_date if sync.window_start_date.present?
+
+      # Try to get the last successful sync's window_end_date
+      last_completed_sync = priorbank_account.syncs.where(status: "completed").order(created_at: :desc).first
+      return last_completed_sync.window_end_date if last_completed_sync&.window_end_date.present?
+
+      # Fall back to latest transaction date
+      return account.entries.maximum(:date) if account.entries.maximum(:date).present?
+
+      # Default to 3 months ago
+      3.months.ago.to_date
+    end
+
     def sync_step_update(step, message, status = "in_progress")
       Rails.logger.info "[PriorbankAccount::Syncer] Sync update - Step: #{step}, Message: #{message}, Status: #{status}"
       sync.progress_update(step: step, message: message, status: status)
@@ -45,16 +70,11 @@ class PriorbankAccount::Syncer
     end
 
     def fetch_transactions
-      window_start = sync.window_start_date || account.entries.maximum(:date) || 3.months.ago.to_date
-      window_end = sync.window_end_date || [ window_start + 3.months, Date.current ].min
-      sync_data_update("window_start_date", window_start)
-      sync_data_update("window_end_date", window_end)
-
-      sync_step_update("fetch_transactions", "Fetching transactions from #{window_start.strftime('%d.%m.%Y')} to #{window_end.strftime('%d.%m.%Y')}...")
+      sync_step_update("fetch_transactions", "Fetching transactions from #{sync.window_start_date.strftime('%d.%m.%Y')} to #{sync.window_end_date.strftime('%d.%m.%Y')}...")
 
       downloader = PriorbankAccount::StatementDownloader.new(
-        window_start,
-        window_end,
+        sync.window_start_date,
+        sync.window_end_date,
         priorbank_account.name,
         headless: true,
         sync: sync,
