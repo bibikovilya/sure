@@ -294,6 +294,105 @@ class PriorbankAccount::TransactionBuilderTest < ActiveSupport::TestCase
     assert_equal 0, result[:transfers].count
   end
 
+  test "returns duplicates in separate field" do
+    # Create an existing transaction
+    Entry.create!(
+      account: @account,
+      date: Date.new(2024, 3, 29),
+      amount: BigDecimal("29.88"),
+      name: "Retail BLR Minsk Gipermarket Gippo",
+      currency: "BYN",
+      notes: "29.03.2024 19:32:46,Retail BLR Minsk Gipermarket Gippo,-29,88,BYN,29.03.2024,0,00,-29,88,,Магазины продуктовые,",
+      entryable: Transaction.new
+    )
+
+    # Parse data with duplicate and new transaction
+    parsed_data = [
+      regular_transaction_data,  # Duplicate
+      {
+        date: Date.new(2024, 3, 30),
+        amount: BigDecimal("-50.00"),
+        name: "New transaction",
+        currency: "BYN",
+        notes: "new,transaction,notes"
+      }
+    ]
+
+    result = @builder.build_from_parsed_data(parsed_data)
+
+    # Should have 1 new transaction, 0 transfers, and 1 duplicate
+    assert_equal 1, result[:transactions].count
+    assert_equal 0, result[:transfers].count
+    assert_equal 1, result[:duplicates].count
+
+    # Verify duplicate contains correct data
+    duplicate = result[:duplicates].first
+    assert_equal Date.new(2024, 3, 29), duplicate[:date]
+    assert_equal BigDecimal("-29.88"), duplicate[:amount]
+    assert_equal "Retail BLR Minsk Gipermarket Gippo", duplicate[:name]
+  end
+
+  test "returns multiple duplicates when batch contains multiple existing transactions" do
+    # Create two existing transactions
+    Entry.create!(
+      account: @account,
+      date: Date.new(2024, 3, 29),
+      amount: BigDecimal("29.88"),
+      name: "Retail BLR Minsk Gipermarket Gippo",
+      currency: "BYN",
+      notes: "29.03.2024 19:32:46,Retail BLR Minsk Gipermarket Gippo,-29,88,BYN,29.03.2024,0,00,-29,88,,Магазины продуктовые,",
+      entryable: Transaction.new
+    )
+
+    Entry.create!(
+      account: @account,
+      date: Date.new(2024, 3, 25),
+      amount: BigDecimal("3000.00"),
+      name: "ATM BLR MINSK PRIORBANK ATM 009",
+      currency: "BYN",
+      notes: "25.03.2024 12:29:59,ATM BLR MINSK PRIORBANK ATM 009,-3 000,00,BYN,25.03.2024,0,00,-3 000,00,,Снятие наличных,",
+      entryable: Transaction.new
+    )
+
+    # Parse data with both duplicates and a new transaction
+    parsed_data = [
+      regular_transaction_data,  # Duplicate 1
+      atm_withdrawal_data,       # Duplicate 2
+      {
+        date: Date.new(2024, 3, 30),
+        amount: BigDecimal("-100.00"),
+        name: "New purchase",
+        currency: "BYN",
+        notes: "new,purchase,notes"
+      }
+    ]
+
+    result = @builder.build_from_parsed_data(parsed_data)
+
+    assert_equal 1, result[:transactions].count
+    assert_equal 0, result[:transfers].count
+    assert_equal 2, result[:duplicates].count
+
+    # Verify both duplicates are present
+    duplicate_names = result[:duplicates].map { |d| d[:name] }
+    assert_includes duplicate_names, "Retail BLR Minsk Gipermarket Gippo"
+    assert_includes duplicate_names, "ATM BLR MINSK PRIORBANK ATM 009"
+  end
+
+  test "returns in-batch duplicates in duplicates field" do
+    parsed_data = [
+      regular_transaction_data,
+      regular_transaction_data  # Same transaction twice in batch
+    ]
+
+    result = @builder.build_from_parsed_data(parsed_data)
+
+    # First one processed, second one marked as duplicate
+    assert_equal 1, result[:transactions].count
+    assert_equal 0, result[:transfers].count
+    assert_equal 1, result[:duplicates].count
+  end
+
   private
 
     def regular_transaction_data

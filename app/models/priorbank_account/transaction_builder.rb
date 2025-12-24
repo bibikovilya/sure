@@ -10,12 +10,16 @@ class PriorbankAccount::TransactionBuilder
   def build_from_parsed_data(parsed_transactions)
     transactions = []
     transfers = []
+    duplicates = []
     processed_notes = Set.new
     adapter = Account::ProviderImportAdapter.new(account)
 
     parsed_transactions.each do |data|
-      # Skip duplicates using the same logic as TransactionImport
-      next if duplicate_exists?(data, adapter) || processed_notes.include?(data[:notes])
+      # Check for duplicates using the same logic as TransactionImport
+      if duplicate_exists?(data, adapter) || processed_notes.include?(data[:notes])
+        duplicates << data
+        next
+      end
 
       processed_notes.add(data[:notes])
 
@@ -26,7 +30,7 @@ class PriorbankAccount::TransactionBuilder
       end
     end
 
-    { transactions:, transfers: }
+    { transactions:, transfers:, duplicates: }
   end
 
   private

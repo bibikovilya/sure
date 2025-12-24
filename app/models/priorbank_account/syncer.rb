@@ -20,7 +20,7 @@ class PriorbankAccount::Syncer
     import_market_data
     materialize_balances(transfers)
 
-    sync.update(sync_stats: { imported_transactions: transactions.ids.count, imported_transfers: transfers.ids.count })
+    sync.update(sync_stats: { imported_transactions: transactions.ids.count, imported_transfers: transfers.ids.count, skipped_duplicates: records[:duplicates].count })
 
     sync_step_update("complete", "Sync completed successfully!", "success")
   rescue => e
@@ -123,9 +123,10 @@ class PriorbankAccount::Syncer
     def build_transactions(transactions)
       sync_step_update("import_transactions", "Building transactions...")
       records = PriorbankAccount::TransactionBuilder.new(account).build_from_parsed_data(transactions)
-      sync_step_update("import_transactions", "Built #{records[:transactions].count} transactions and #{records[:transfers].count} transfers")
+      sync_step_update("import_transactions", "Built #{records[:transactions].count} transactions and #{records[:transfers].count} transfers, skipped #{records[:duplicates].count} duplicates")
       sync_data_update("built_entries", records[:transactions].map { it.entry })
       sync_data_update("built_transfers", records[:transfers].map { |it| [ it.outflow_transaction.entry, it.inflow_transaction.entry ] }.flatten)
+      sync_data_update("duplicates", records[:duplicates])
       records
     rescue => e
       sync_step_update("import_transactions", "Error building transactions: #{e.message}", "error")
