@@ -23,8 +23,11 @@ class Priorbank::BrowserSession
   def login_and_navigate_to_cards
     login_to_priorbank
 
+    sync_update("wait_ready", "Waiting for page to be fully loaded...")
+    wait_for_page_ready
+
     sync_update("popup", "Closing popups...")
-    close_popup
+    close_popups
 
     sync_update("navigation", "Opening cards page...")
     open_cards_page
@@ -84,14 +87,85 @@ class Priorbank::BrowserSession
       sync_update("login", "Successfully logged in", "success")
     end
 
-    def close_popup
-      until page.css("span.menu-item-parent").find { |menu| menu.text == "Мои продукты" }
-        popup = page.at_css("div.k-widget.k-window")
-        break unless popup&.visible?
+    def wait_for_page_ready
+      # Wait for any loading spinners to disappear
+      sync_update("wait_ready", "Waiting for spinners to disappear...")
 
-        popup.at_css("span.k-i-close").focus.click
-        sync_update("popup", "Closed popup")
-        sleep(0.1)
+      max_wait = 10 # seconds
+      start_time = Time.now
+
+      loop do
+        break if Time.now - start_time > max_wait
+
+        # Check if there are any loading indicators
+        spinner = page.at_css(".k-loading-mask, .k-loading-image, [class*='loading'], [class*='spinner']") rescue nil
+        break unless spinner&.visible? rescue false
+
+        sync_update("wait_ready", "Page still loading...")
+        sleep(0.5)
+      end
+
+      # Give an extra moment for JavaScript to settle
+      sleep(1)
+      page.network.wait_for_idle(timeout: 5) rescue nil
+
+      sync_update("wait_ready", "Page is ready", "success")
+    end
+
+    def close_popups
+      max_attempts = 10
+      attempts = 0
+
+      loop do
+        attempts += 1
+        break if attempts > max_attempts
+
+        # First check if we can see the menu - if yes, we're done
+        begin
+          menu_visible = page.css("span.menu-item-parent").any? { |menu| menu.text == "Мои продукты" } rescue false
+          break if menu_visible
+        rescue => e
+          sync_update("popup", "Waiting for menu to be accessible...")
+          sleep(0.5)
+          next
+        end
+
+        # Try to find and close any visible popups
+        begin
+          popup = page.at_css("div.k-widget.k-window")
+
+          # If no popup found or it's not visible, we're done
+          break unless popup
+          is_visible = popup.visible? rescue false
+          break unless is_visible
+
+          # Try to close the popup
+          close_button = popup.at_css("span.k-i-close")
+          if close_button
+            close_button.focus.click
+            sync_update("popup", "Closed popup #{attempts}")
+            sleep(0.5) # Wait for popup close animation
+          else
+            sync_update("popup", "No close button found on popup")
+            break
+          end
+        rescue => e
+          sync_update("popup", "Error while closing popup: #{e.message}")
+          # If we get an error, wait a bit and try again
+          sleep(0.5)
+        end
+      end
+
+      # Final verification
+      begin
+        menu_found = page.css("span.menu-item-parent").any? { |menu| menu.text == "Мои продукты" } rescue false
+        if menu_found
+          sync_update("popup", "All popups closed, menu is accessible", "success")
+        else
+          sync_update("popup", "Menu might not be accessible yet, but continuing...", "warning")
+        end
+      rescue => e
+        sync_update("popup", "Could not verify menu accessibility: #{e.message}", "warning")
       end
     end
 
