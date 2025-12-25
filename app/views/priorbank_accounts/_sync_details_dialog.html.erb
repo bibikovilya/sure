@@ -198,8 +198,8 @@
                           <p class="text-sm font-medium text-secondary truncate"><%= duplicate["name"] %></p>
                           <p class="text-xs text-secondary"><%= format_date(duplicate["date"]) %></p>
                         </div>
-                        <p class="text-sm font-medium ml-2 <%= duplicate['amount'].to_f.negative? ? 'text-green-600' : 'text-secondary' %>">
-                          <%= format_money(Money.new(-duplicate["amount"].to_f, duplicate["currency"])) %>
+                        <p class="text-sm font-medium ml-2 <%= duplicate['amount'].to_f.positive? ? 'text-green-600' : 'text-secondary' %>">
+                          <%= format_money(Money.new(duplicate["amount"].to_f, duplicate["currency"])) %>
                         </p>
                       </div>
                     <% end %>
