@@ -31,7 +31,7 @@ class PriorbankAccount::StatementDownloader
     sync_update("statement_downloader", "Statement downloaded successfully!", "success")
     downloaded_file_path
   rescue => e
-    session.page.screenshot(path: Rails.root.join("tmp", "prior_fail-#{Time.now.to_i}.png").to_s, full: true)
+    capture_error_screenshot(e)
     sync_update("statement_downloader", "Failed to download statement: #{e.message}", "error")
     raise e
   ensure
@@ -139,5 +139,25 @@ class PriorbankAccount::StatementDownloader
       sync_update("downloaded_file", "Found downloaded file: #{file_path}", "success")
 
       file_path
+    end
+
+    def capture_error_screenshot(error)
+      return unless sync
+
+      sync_tmp_dir = Rails.root.join("tmp", "sync", sync.id.to_s)
+      FileUtils.mkdir_p(sync_tmp_dir)
+
+      screenshot_path = sync_tmp_dir.join("error_screenshot_#{Time.now.to_i}.png").to_s
+      session.page.screenshot(path: screenshot_path, full: true)
+
+      sync.error_screenshot.attach(
+        io: File.open(screenshot_path),
+        filename: "error_screenshot_#{sync.id}_#{Time.now.to_i}.png",
+        content_type: "image/png"
+      )
+
+      Rails.logger.info "[PriorbankAccount::StatementDownloader] Error screenshot attached to sync #{sync.id}"
+    rescue => screenshot_error
+      Rails.logger.error "[PriorbankAccount::StatementDownloader] Failed to attach screenshot: #{screenshot_error.message}"
     end
 end

@@ -69,6 +69,22 @@
           </dl>
         </div>
 
+        <%# Error Screenshot Section %>
+        <% if sync.error_screenshot.attached? %>
+          <div>
+            <h3 class="text-sm font-medium text-primary mb-2"><%= t(".error_screenshot_section") %></h3>
+            <div class="bg-container-inset rounded-lg p-3">
+              <%= image_tag sync.error_screenshot, class: "w-full h-auto rounded border border-secondary", alt: "Error screenshot" %>
+              <div class="mt-2 flex gap-2">
+                <%= link_to rails_blob_path(sync.error_screenshot, disposition: "attachment"), class: "text-xs text-primary hover:underline inline-flex items-center gap-1", download: sync.error_screenshot.filename.to_s do %>
+                  <%= icon('download', size: 'xs') %>
+                  <%= t(".download_screenshot") %>
+                <% end %>
+              </div>
+            </div>
+          </div>
+        <% end %>
+
         <%# Window Section %>
         <% if sync.data.present? && (sync.data["window_start_date"].present? || sync.data["window_end_date"].present?) %>
           <div>
