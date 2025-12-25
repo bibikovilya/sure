@@ -68,7 +68,10 @@ class PriorbankAccountsController < ApplicationController
   end
 
   def sync_details
-    @sync = @priorbank_account.syncs.ordered.first
+    @syncs = @priorbank_account.syncs.ordered.limit(10)
+    @sync = params[:sync_id].present? ? @syncs.find_by(id: params[:sync_id]) : @syncs.first
+
+    render :sync_details, layout: false
   end
 
   private

@@ -32,11 +32,28 @@ en:
       syncing: Syncing...
     sync_details_dialog:
       title: "Sync Details - %{item_name}"
+      select_sync: "Select Sync"
+      loading_sync_details: "Loading sync details..."
       status_section: "Status"
       steps_section: "Sync Steps"
-      timestamps_section: "Timestamps"
+      blocked_transactions: "Blocked Transactions"
       window_section: "Sync Window"
       sync_stats_section: "Sync Statistics"
+      transaction_details_section: "Transaction Details"
+      imported_transactions:
+        one: "Imported Transaction (%{count})"
+        other: "Imported Transactions (%{count})"
+      imported_transfers:
+        one: "Imported Transfer (%{count})"
+        other: "Imported Transfers (%{count})"
+      skipped_duplicates:
+        one: "Skipped Duplicate (%{count})"
+        other: "Skipped Duplicates (%{count})"
+      blocked_transactions_detail:
+        one: "Blocked Transaction (%{count})"
+        other: "Blocked Transactions (%{count})"
+      from: "From"
+      to: "To"
       transactions_section:
         one: "Transaction (%{count})"
         other: "Transactions (%{count})"
