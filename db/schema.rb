@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2025_12_05_153941) do
+ActiveRecord::Schema[7.2].define(version: 2025_12_26_170649) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
@@ -670,22 +670,6 @@ ActiveRecord::Schema[7.2].define(version: 2025_12_05_153941) do
     t.jsonb "raw_institution_payload", default: {}
     t.index ["family_id"], name: "index_plaid_items_on_family_id"
     t.index ["plaid_id"], name: "index_plaid_items_on_plaid_id", unique: true
-  end
-
-  create_table "prior_accounts", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
-    t.string "account_number"
-    t.string "name", null: false
-    t.string "currency", null: false
-    t.decimal "current_balance", precision: 19, scale: 4
-    t.date "last_statement_date"
-    t.datetime "last_synced_at"
-    t.jsonb "raw_payload", default: {}
-    t.jsonb "raw_transactions_payload", default: {}
-    t.jsonb "sync_metadata", default: {}
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["account_number"], name: "index_prior_accounts_on_account_number", unique: true, where: "(account_number IS NOT NULL)"
-    t.index ["name"], name: "index_prior_accounts_on_name", unique: true
   end
 
   create_table "priorbank_accounts", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
