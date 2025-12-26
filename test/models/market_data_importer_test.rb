@@ -13,6 +13,7 @@ class MarketDataImporterTest < ActiveSupport::TestCase
     Trade.delete_all
     Holding.delete_all
     Security.delete_all
+    Account.delete_all
 
     ENV["EXCHANGE_RATE_PROVIDER"] = "nbrb"
 
@@ -62,14 +63,14 @@ class MarketDataImporterTest < ActiveSupport::TestCase
                     OpenStruct.new(from: "CAD", to: "USD", date: SNAPSHOT_START_DATE, rate: 1.5)
                   ]))
 
-    @provider.expects(:fetch_exchange_rates)
-             .with(from: "USD",
-                   to: "CAD",
-                   start_date: expected_start_date,
-                   end_date: end_date)
-             .returns(provider_success_response([
-               OpenStruct.new(from: "USD", to: "CAD", date: SNAPSHOT_START_DATE, rate: 0.67)
-             ]))
+    @nbrb_provider.expects(:fetch_exchange_rates)
+                  .with(from: "USD",
+                        to: "CAD",
+                        start_date: expected_start_date,
+                        end_date: end_date)
+                  .returns(provider_success_response([
+                    OpenStruct.new(from: "USD", to: "CAD", date: SNAPSHOT_START_DATE, rate: 0.67)
+                  ]))
 
     before = ExchangeRate.count
     MarketDataImporter.new(mode: :snapshot).import_exchange_rates
