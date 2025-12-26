@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
+ActiveRecord::Schema[7.2].define(version: 2025_12_26_170649) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
@@ -370,11 +370,11 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "exchange_operating_mic"
+    t.string "opening_date"
     t.string "category_parent"
     t.string "category_color"
     t.string "category_classification"
     t.string "category_icon"
-    t.string "opening_date"
     t.index ["import_id"], name: "index_import_rows_on_import_id"
   end
 
@@ -672,6 +672,33 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
     t.index ["plaid_id"], name: "index_plaid_items_on_plaid_id", unique: true
   end
 
+  create_table "priorbank_accounts", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "priorbank_item_id", null: false
+    t.string "name", null: false
+    t.string "account_type", null: false
+    t.string "currency", default: "BYN", null: false
+    t.decimal "current_balance", precision: 19, scale: 4
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.string "account_number"
+    t.index ["account_number"], name: "index_priorbank_accounts_on_account_number"
+    t.index ["account_type"], name: "index_priorbank_accounts_on_account_type"
+    t.index ["currency"], name: "index_priorbank_accounts_on_currency"
+    t.index ["priorbank_item_id"], name: "index_priorbank_accounts_on_priorbank_item_id"
+  end
+
+  create_table "priorbank_items", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.string "name", null: false
+    t.string "login"
+    t.string "password"
+    t.string "status", default: "good", null: false
+    t.boolean "scheduled_for_deletion", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["family_id"], name: "index_priorbank_items_on_family_id"
+  end
+
   create_table "properties", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
@@ -699,8 +726,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
     t.decimal "expected_amount_min", precision: 19, scale: 4
     t.decimal "expected_amount_max", precision: 19, scale: 4
     t.decimal "expected_amount_avg", precision: 19, scale: 4
-    t.index ["family_id", "merchant_id", "amount", "currency"], name: "idx_recurring_txns_merchant", unique: true, where: "(merchant_id IS NOT NULL)"
-    t.index ["family_id", "name", "amount", "currency"], name: "idx_recurring_txns_name", unique: true, where: "((name IS NOT NULL) AND (merchant_id IS NULL))"
+    t.index ["family_id", "merchant_id", "amount", "currency"], name: "idx_recurring_txns_on_family_merchant_amount_currency", unique: true
     t.index ["family_id", "status"], name: "index_recurring_transactions_on_family_id_and_status"
     t.index ["family_id"], name: "index_recurring_transactions_on_family_id"
     t.index ["merchant_id"], name: "index_recurring_transactions_on_merchant_id"
@@ -981,12 +1007,10 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
     t.datetime "set_onboarding_preferences_at"
     t.datetime "set_onboarding_goals_at"
     t.string "default_account_order", default: "name_asc"
-    t.jsonb "preferences", default: {}, null: false
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["family_id"], name: "index_users_on_family_id"
     t.index ["last_viewed_chat_id"], name: "index_users_on_last_viewed_chat_id"
     t.index ["otp_secret"], name: "index_users_on_otp_secret", unique: true, where: "(otp_secret IS NOT NULL)"
-    t.index ["preferences"], name: "index_users_on_preferences", using: :gin
   end
 
   create_table "valuations", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -1046,6 +1070,8 @@ ActiveRecord::Schema[7.2].define(version: 2025_11_21_140453) do
   add_foreign_key "oidc_identities", "users"
   add_foreign_key "plaid_accounts", "plaid_items"
   add_foreign_key "plaid_items", "families"
+  add_foreign_key "priorbank_accounts", "priorbank_items"
+  add_foreign_key "priorbank_items", "families"
   add_foreign_key "recurring_transactions", "families"
   add_foreign_key "recurring_transactions", "merchants"
   add_foreign_key "rejected_transfers", "transactions", column: "inflow_transaction_id"

@@ -1,0 +1,79 @@
+---
+en:
+  priorbank_items:
+    create:
+      success: "PriorBank connection created successfully"
+      errors:
+        blank_credentials: "Login and password are required"
+        unexpected: "An unexpected error occurred: %{error}. Please try again."
+    destroy:
+      success: "PriorBank connection successfully scheduled for deletion."
+    sync:
+      success: "PriorBank connection sync initiated."
+      errors:
+        unexpected: "An unexpected error occurred: %{error}. Please try again."
+    priorbank_item:
+      delete: Delete
+      deletion_in_progress: "(deletion in progress...)"
+      error: Error occurred while syncing data
+      no_accounts_description: This connection doesn't have any synchronized accounts yet.
+      no_accounts_title: No accounts found
+      requires_update: Requires re-authentication
+      status: Last synced %{timestamp} ago
+      status_never: Never synced
+      syncing: Syncing...
+      update: Update connection
+      status_summary: "%{linked_accounts} linked, %{unlinked_accounts} need setup"
+    priorbank_account:
+      linked_to: "Linked to %{account}"
+      status: "Last synced %{timestamp} ago"
+      status_never: "Never synced"
+      error: "Error occurred"
+      syncing: Syncing...
+    sync_details_dialog:
+      title: "Sync Details - %{item_name}"
+      select_sync: "Select Sync"
+      loading_sync_details: "Loading sync details..."
+      status_section: "Status"
+      steps_section: "Sync Steps"
+      blocked_transactions: "Blocked Transactions"
+      window_section: "Sync Window"
+      sync_stats_section: "Sync Statistics"
+      transaction_details_section: "Transaction Details"
+      imported_transactions:
+        one: "Imported Transaction (%{count})"
+        other: "Imported Transactions (%{count})"
+      imported_transfers:
+        one: "Imported Transfer (%{count})"
+        other: "Imported Transfers (%{count})"
+      skipped_duplicates:
+        one: "Skipped Duplicate (%{count})"
+        other: "Skipped Duplicates (%{count})"
+      blocked_transactions_detail:
+        one: "Blocked Transaction (%{count})"
+        other: "Blocked Transactions (%{count})"
+      from: "From"
+      to: "To"
+      transactions_section:
+        one: "Transaction (%{count})"
+        other: "Transactions (%{count})"
+      more_transactions:
+        one: "and %{count} more transaction"
+        other: "and %{count} more transactions"
+      raw_data_section: "Raw Data"
+      hierarchy_section: "Sync Hierarchy"
+      status: "Status"
+      error: "Error"
+      created_at: "Created"
+      pending_at: "Pending"
+      syncing_at: "Started Syncing"
+      completed_at: "Completed"
+      failed_at: "Failed"
+      window_start_date: "Window Start"
+      window_end_date: "Window End"
+      parent_sync: "Parent Sync"
+      child_syncs:
+        one: "Child Sync (%{count})"
+        other: "Child Syncs (%{count})"
+      no_sync_data: "No sync data available for this connection."
+      close: "Close"

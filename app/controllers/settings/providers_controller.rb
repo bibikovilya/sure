@@ -129,5 +129,9 @@ class Settings::ProvidersController < ApplicationController
       # Providers page only needs to know whether any SimpleFin/Lunchflow connections exist
       @simplefin_items = Current.family.simplefin_items.ordered.select(:id)
       @lunchflow_items = Current.family.lunchflow_items.ordered.select(:id)
+
+      # Priorbank items are CRD here
+      @priorbank_items = Current.family.priorbank_items.ordered
+      @priorbank_item = PriorbankItem.new
     end
 end

@@ -1,0 +1,128 @@
+<%# locals: (priorbank_item:) %>
+
+<%= tag.div id: dom_id(priorbank_item) do %>
+  <details open class="group bg-container p-4 shadow-border-xs rounded-xl">
+    <summary class="flex items-center justify-between gap-2 focus-visible:outline-hidden">
+      <div class="flex items-center gap-2">
+        <%= icon "chevron-right", class: "group-open:transform group-open:rotate-90" %>
+
+        <div class="flex items-center justify-center h-8 w-8 bg-success/10 rounded-full">
+          <div class="flex items-center justify-center">
+            <%= tag.p priorbank_item.name.first.upcase, class: "text-success text-xs font-medium" %>
+          </div>
+        </div>
+
+        <div class="pl-1 text-sm">
+          <div class="flex items-center gap-2">
+            <%= tag.p priorbank_item.name, class: "font-medium text-primary" %>
+            <% if priorbank_item.scheduled_for_deletion? %>
+              <p class="text-destructive text-sm animate-pulse"><%= t(".deletion_in_progress") %></p>
+            <% end %>
+          </div>
+          <% if priorbank_item.priorbank_accounts.any? %>
+            <p class="text-xs text-secondary">
+              <%= t(".status_summary", linked_accounts: priorbank_item.linked_priorbank_accounts.count, unlinked_accounts: priorbank_item.unlinked_priorbank_accounts.count) %>
+            </p>
+          <% end %>
+          <% if priorbank_item.syncing? %>
+            <div class="text-secondary flex items-center gap-1">
+              <%= icon "loader", size: "sm", class: "animate-spin" %>
+              <%= tag.span t(".syncing") %>
+            </div>
+          <% elsif priorbank_item.requires_update? %>
+            <div class="text-warning flex items-center gap-1">
+              <%= icon "alert-triangle", size: "sm", color: "warning" %>
+              <%= tag.span t(".requires_update") %>
+            </div>
+          <% elsif priorbank_item.sync_error.present? %>
+            <div class="text-secondary flex items-center gap-1">
+              <%= render DS::Tooltip.new(text: priorbank_item.sync_error, icon: "alert-circle", size: "sm", color: "destructive") %>
+              <%= tag.span t(".error"), class: "text-destructive" %>
+            </div>
+          <% else %>
+            <p class="text-secondary">
+              <% if priorbank_item.last_synced_at %>
+                <%= t(".status", timestamp: time_ago_in_words(priorbank_item.last_synced_at)) %>
+              <% else %>
+                <%= t(".status_never") %>
+              <% end %>
+            </p>
+          <% end %>
+        </div>
+      </div>
+
+      <% unless priorbank_item.scheduled_for_deletion? %>
+        <div class="flex items-center gap-2">
+          <% if priorbank_item.last_synced_at %>
+            <%= link_to sync_details_priorbank_item_path(priorbank_item), data: { turbo_frame: "modal" } do %>
+              <%= icon("info", as_button: true) %>
+            <% end %>
+          <% end %>
+          <%= icon(
+            "refresh-cw",
+            as_button: true,
+            href: sync_priorbank_item_path(priorbank_item)
+          ) %>
+        </div>
+      <% end %>
+    </summary>
+
+    <% unless priorbank_item.scheduled_for_deletion? %>
+      <div class="space-y-4 mt-4">
+        <% if priorbank_item.priorbank_accounts.any? %>
+          <% linked_accounts = priorbank_item.linked_priorbank_accounts %>
+          <% unlinked_accounts = priorbank_item.unlinked_priorbank_accounts %>
+
+          <% if linked_accounts.any? %>
+            <div class="bg-container-inset p-1 rounded-xl">
+              <div class="flex items-center px-4 py-2 text-xs font-medium text-secondary">
+                <p>Linked Accounts</p>
+                <span class="text-subdued mx-2">&middot;</span>
+                <p><%= linked_accounts.count %></p>
+              </div>
+              <div class="bg-container rounded-lg shadow-border-xs">
+                <% linked_accounts.each_with_index do |priorbank_account, index| %>
+                  <div class="relative">
+                    <%= render "priorbank_items/priorbank_account", priorbank_account: priorbank_account %>
+                    <div class="flex justify-center">
+                      <%= icon "arrow-down" %>
+                    </div>
+                    <%= render priorbank_account.account %>
+                  </div>
+                  <% unless index == linked_accounts.count - 1 %>
+                    <%= render "shared/ruler" %>
+                  <% end %>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
+
+          <% if unlinked_accounts.any? %>
+            <div class="bg-container-inset p-1 rounded-xl">
+              <div class="flex items-center px-4 py-2 text-xs font-medium text-secondary">
+                <p>Needs Setup</p>
+                <span class="text-subdued mx-2">&middot;</span>
+                <p><%= unlinked_accounts.count %></p>
+              </div>
+              <div class="bg-container rounded-lg shadow-border-xs">
+                <% unlinked_accounts.each_with_index do |priorbank_account, index| %>
+                  <%= render "priorbank_items/priorbank_account", priorbank_account: priorbank_account %>
+                  <% unless index == unlinked_accounts.count - 1 %>
+                    <%= render "shared/ruler" %>
+                  <% end %>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
+        <% end %>
+
+        <% if priorbank_item.priorbank_accounts.empty? %>
+          <div class="p-4 flex flex-col gap-3 items-center justify-center">
+            <p class="text-primary font-medium text-sm"><%= t(".no_accounts_title") %></p>
+            <p class="text-secondary text-sm"><%= t(".no_accounts_description") %></p>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+  </details>
+<% end %>

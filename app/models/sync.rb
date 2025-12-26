@@ -15,6 +15,8 @@ class Sync < ApplicationRecord
   belongs_to :parent, class_name: "Sync", optional: true
   has_many :children, class_name: "Sync", foreign_key: :parent_id, dependent: :destroy
 
+  has_one_attached :error_screenshot
+
   scope :ordered, -> { order(created_at: :desc) }
   scope :incomplete, -> { where("syncs.status IN (?)", %w[pending syncing]) }
   scope :visible, -> { incomplete.where("syncs.created_at > ?", VISIBLE_FOR.ago) }
@@ -126,6 +128,22 @@ class Sync < ApplicationRecord
       window_start_date: earliest_start_date,
       window_end_date: latest_end_date
     )
+  end
+
+  def progress_update(step:, message:, status: "in_progress")
+    self.data ||= { "steps" => [] }
+
+    step_data = {
+      "step" => step,
+      "message" => message,
+      "status" => status,
+      "timestamp" => Time.current.iso8601
+    }
+
+    self.data["steps"] ||= []
+    self.data["steps"] << step_data
+
+    update(data: self.data)
   end
 
   private

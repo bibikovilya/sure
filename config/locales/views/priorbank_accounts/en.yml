@@ -1,0 +1,43 @@
+---
+en:
+  priorbank_accounts:
+    link:
+      title: "Link Priorbank account"
+      no_accounts_message: "No available manual accounts to link."
+      no_accounts_instructions:
+        - "Create a manual account first, then link it here."
+        - "Only manual accounts without existing provider links can be linked."
+      priorbank_account_label: "Priorbank account"
+      manual_account_label: "Link to manual account"
+      select_account_label: "Manual account"
+      select_account_prompt: "Select an account"
+      link_button: "Link account"
+      cancel_button: "Cancel"
+    link_account:
+      success: "Account successfully linked to Priorbank"
+      errors:
+        only_manual: "Only manual accounts can be linked"
+        invalid_account: "Invalid Priorbank account selected"
+    sync_details_dialog:
+      title: "Sync Details - %{account_name}"
+      status_section: "Status"
+      timestamps_section: "Timestamps"
+      window_section: "Sync Window"
+      sync_stats_section: "Sync Statistics"
+      data_section: "Additional Data"
+      hierarchy_section: "Sync Hierarchy"
+      status: "Status"
+      error: "Error"
+      created_at: "Created"
+      pending_at: "Pending"
+      syncing_at: "Started Syncing"
+      completed_at: "Completed"
+      failed_at: "Failed"
+      window_start_date: "Window Start"
+      window_end_date: "Window End"
+      parent_sync: "Parent Sync"
+      child_syncs:
+        one: "Child Sync (%{count})"
+        other: "Child Syncs (%{count})"
+      no_sync_data: "No sync data available for this account."
+      close: "Close"

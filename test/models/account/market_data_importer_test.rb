@@ -7,7 +7,6 @@ class Account::MarketDataImporterTest < ActiveSupport::TestCase
   PROVIDER_BUFFER = 5.days
 
   setup do
-    # Ensure a clean slate for deterministic assertions
     Security::Price.delete_all
     ExchangeRate.delete_all
     Trade.delete_all
@@ -60,14 +59,14 @@ class Account::MarketDataImporterTest < ActiveSupport::TestCase
                              OpenStruct.new(from: "CAD", to: "USD", date: existing_date, rate: 1.5)
                            ]))
 
-    @provider.expects(:fetch_exchange_rates)
-             .with(from: "USD",
-                   to: "CAD",
-                   start_date: expected_start_date,
-                   end_date: end_date)
-             .returns(provider_success_response([
-               OpenStruct.new(from: "USD", to: "CAD", date: existing_date, rate: 0.67)
-             ]))
+    @exchange_rate_provider.expects(:fetch_exchange_rates)
+                           .with(from: "USD",
+                                 to: "CAD",
+                                 start_date: expected_start_date,
+                                 end_date: end_date)
+                           .returns(provider_success_response([
+                             OpenStruct.new(from: "USD", to: "CAD", date: existing_date, rate: 0.67)
+                           ]))
 
     before = ExchangeRate.count
     Account::MarketDataImporter.new(account).import_all
@@ -205,14 +204,14 @@ class Account::MarketDataImporterTest < ActiveSupport::TestCase
                              Provider::TwelveData::Error.new("Rate limit exceeded", details: { code: 429, message: "Rate limit exceeded" })
                            ))
 
-    @provider.expects(:fetch_exchange_rates)
-             .with(from: "USD",
-                   to: "CAD",
-                   start_date: expected_start_date,
-                   end_date: end_date)
-             .returns(provider_error_response(
-               Provider::TwelveData::Error.new("Rate limit exceeded", details: { code: 429, message: "Rate limit exceeded" })
-             ))
+    @exchange_rate_provider.expects(:fetch_exchange_rates)
+                           .with(from: "USD",
+                                 to: "CAD",
+                                 start_date: expected_start_date,
+                                 end_date: end_date)
+                           .returns(provider_error_response(
+                             Provider::TwelveData::Error.new("Rate limit exceeded", details: { code: 429, message: "Rate limit exceeded" })
+                           ))
 
     before = ExchangeRate.count
 

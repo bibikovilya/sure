@@ -17,6 +17,7 @@ en:
       show:
         general: General Settings
         financial_data_providers: Financial Data Providers
+        priorbank: Priorbank Integration
         invites: Invite Codes
         title: Self-Hosting
         danger_zone: Danger Zone

@@ -1,0 +1,151 @@
+<%= render DS::Dialog.new(width: :lg) do |dialog| %>
+  <% dialog.with_header(title: t(".title", item_name: priorbank_item.name)) %>
+
+  <% dialog.with_body do %>
+    <% if sync.present? %>
+      <div class="space-y-6">
+        <%# Status Section %>
+        <div>
+          <h3 class="text-sm font-medium text-primary mb-3"><%= t(".status_section") %></h3>
+          <dl class="space-y-2">
+            <div class="flex justify-between py-2 border-b border-secondary">
+              <dt class="text-sm text-secondary"><%= t(".status") %></dt>
+              <dd class="text-sm font-medium">
+                <span class="<%= sync.status == 'completed' ? 'text-success' : sync.status == 'failed' ? 'text-destructive' : sync.status == 'syncing' ? 'text-warning' : 'text-secondary' %>">
+                  <%= sync.status.titleize %>
+                </span>
+              </dd>
+            </div>
+
+            <% if sync.error.present? %>
+              <div class="flex justify-between py-2 border-b border-secondary">
+                <dt class="text-sm text-secondary"><%= t(".error") %></dt>
+                <dd class="text-sm text-destructive wrap-break-word max-w-md text-right"><%= sync.error %></dd>
+              </div>
+            <% end %>
+          </dl>
+        </div>
+
+        <%# Timestamps Section %>
+        <div>
+          <h3 class="text-sm font-medium text-primary mb-3"><%= t(".timestamps_section") %></h3>
+          <dl class="space-y-2">
+            <div class="flex justify-between py-2 border-b border-secondary">
+              <dt class="text-sm text-secondary"><%= t(".created_at") %></dt>
+              <dd class="text-sm text-primary"><%= l(sync.created_at, format: :long) %></dd>
+            </div>
+
+            <% if sync.pending_at.present? %>
+              <div class="flex justify-between py-2 border-b border-secondary">
+                <dt class="text-sm text-secondary"><%= t(".pending_at") %></dt>
+                <dd class="text-sm text-primary"><%= l(sync.pending_at, format: :long) %></dd>
+              </div>
+            <% end %>
+
+            <% if sync.syncing_at.present? %>
+              <div class="flex justify-between py-2 border-b border-secondary">
+                <dt class="text-sm text-secondary"><%= t(".syncing_at") %></dt>
+                <dd class="text-sm text-primary"><%= l(sync.syncing_at, format: :long) %></dd>
+              </div>
+            <% end %>
+
+            <% if sync.completed_at.present? %>
+              <div class="flex justify-between py-2 border-b border-secondary">
+                <dt class="text-sm text-secondary"><%= t(".completed_at") %></dt>
+                <dd class="text-sm text-primary"><%= l(sync.completed_at, format: :long) %></dd>
+              </div>
+            <% end %>
+
+            <% if sync.failed_at.present? %>
+              <div class="flex justify-between py-2 border-b border-secondary">
+                <dt class="text-sm text-secondary"><%= t(".failed_at") %></dt>
+                <dd class="text-sm text-destructive"><%= l(sync.failed_at, format: :long) %></dd>
+              </div>
+            <% end %>
+          </dl>
+        </div>
+
+        <%# Window Section %>
+        <% if sync.window_start_date.present? || sync.window_end_date.present? %>
+          <div>
+            <h3 class="text-sm font-medium text-primary mb-3"><%= t(".window_section") %></h3>
+            <dl class="space-y-2">
+              <% if sync.window_start_date.present? %>
+                <div class="flex justify-between py-2 border-b border-secondary">
+                  <dt class="text-sm text-secondary"><%= t(".window_start_date") %></dt>
+                  <dd class="text-sm text-primary"><%= l(sync.window_start_date) %></dd>
+                </div>
+              <% end %>
+
+              <% if sync.window_end_date.present? %>
+                <div class="flex justify-between py-2 border-b border-secondary">
+                  <dt class="text-sm text-secondary"><%= t(".window_end_date") %></dt>
+                  <dd class="text-sm text-primary"><%= l(sync.window_end_date) %></dd>
+                </div>
+              <% end %>
+            </dl>
+          </div>
+        <% end %>
+
+        <%# Sync Stats Section %>
+        <% if sync.sync_stats.present? && sync.sync_stats.any? %>
+          <div>
+            <h3 class="text-sm font-medium text-primary mb-3"><%= t(".sync_stats_section") %></h3>
+            <dl class="space-y-2">
+              <% sync.sync_stats.each do |key, value| %>
+                <div class="flex justify-between py-2 border-b border-secondary">
+                  <dt class="text-sm text-secondary"><%= key.humanize %></dt>
+                  <dd class="text-sm text-primary"><%= value.is_a?(Hash) || value.is_a?(Array) ? value.to_json : value %></dd>
+                </div>
+              <% end %>
+            </dl>
+          </div>
+        <% end %>
+
+        <%# Data Section %>
+        <% if sync.data.present? && sync.data.any? %>
+          <div>
+            <h3 class="text-sm font-medium text-primary mb-3"><%= t(".data_section") %></h3>
+            <div class="bg-container-inset rounded-lg p-3 max-h-60 overflow-auto">
+              <pre class="text-xs text-primary"><%= JSON.pretty_generate(sync.data) %></pre>
+            </div>
+          </div>
+        <% end %>
+
+        <%# Parent/Children Info %>
+        <% if sync.parent.present? || sync.children.any? %>
+          <div>
+            <h3 class="text-sm font-medium text-primary mb-3"><%= t(".hierarchy_section") %></h3>
+            <dl class="space-y-2">
+              <% if sync.parent.present? %>
+                <div class="flex justify-between py-2 border-b border-secondary">
+                  <dt class="text-sm text-secondary"><%= t(".parent_sync") %></dt>
+                  <dd class="text-sm text-primary">
+                    <%= sync.parent.syncable_type %> (<%= sync.parent.status %>)
+                  </dd>
+                </div>
+              <% end %>
+
+              <% if sync.children.any? %>
+                <div class="py-2 border-b border-secondary">
+                  <dt class="text-sm text-secondary mb-2"><%= t(".child_syncs", count: sync.children.count) %></dt>
+                  <dd class="space-y-1">
+                    <% sync.children.each do |child| %>
+                      <div class="text-xs text-primary bg-container-inset rounded px-2 py-1">
+                        <%= child.syncable_type %> - <%= child.status %>
+                      </div>
+                    <% end %>
+                  </dd>
+                </div>
+              <% end %>
+            </dl>
+          </div>
+        <% end %>
+      </div>
+    <% else %>
+      <div class="text-center py-8">
+        <p class="text-secondary"><%= t(".no_sync_data") %></p>
+      </div>
+    <% end %>
+  <% end %>
+<% end %>

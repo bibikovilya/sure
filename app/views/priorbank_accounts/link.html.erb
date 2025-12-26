@@ -1,0 +1,64 @@
+<%# Modal: Link a Priorbank account to an existing manual account %>
+<%= render DS::Dialog.new do |dialog| %>
+  <% dialog.with_header(title: t(".title")) %>
+  <% dialog.with_body do %>
+    <% if @available_accounts.blank? %>
+      <div class="p-4 text-sm text-secondary">
+        <p class="mb-2"><%= t(".no_accounts_message") %></p>
+        <ul class="list-disc list-inside space-y-1">
+          <% t(".no_accounts_instructions").each do |instruction| %>
+            <li><%= instruction %></li>
+          <% end %>
+        </ul>
+      </div>
+    <% else %>
+      <%= styled_form_with(
+            url: link_account_priorbank_account_path(@priorbank_account),
+            scope: :priorbank_link,
+            class: "space-y-8",
+            data: { turbo_frame: :_top }
+          ) do |f| %>
+        <section class="space-y-4">
+          <div class="space-y-2">
+            <h2 class="text-sm font-medium text-gray-700">
+              <%= t(".priorbank_account_label") %>
+            </h2>
+
+            <div class="p-3 bg-container-inset rounded-lg">
+              <p class="text-sm text-secondary">
+                <span class="font-medium text-primary"><%= @priorbank_account.name %></span>
+                <br>
+                <%= @priorbank_account.account_type %> • <%= @priorbank_account.account_number %>
+                <br>
+                <%= Money.new(@priorbank_account.current_balance, @priorbank_account.currency).format %>
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <div class="flex justify-center py-2">
+          <%= icon "arrow-down" %>
+        </div>
+
+        <section class="space-y-4">
+          <div class="space-y-2">
+            <h2 class="text-sm font-medium text-gray-700">
+              <%= t(".manual_account_label") %>
+            </h2>
+
+            <%= f.select(
+                  :account_id,
+                  @available_accounts.map { |acc| ["#{acc.name} (#{format_money acc.balance_money})", acc.id] },
+                  {
+                    label: t(".select_account_label"),
+                    include_blank: t(".select_account_prompt")
+                  }
+                ) %>
+          </div>
+        </section>
+
+        <%= f.submit t(".link_button") %>
+      <% end %>
+    <% end %>
+  <% end %>
+<% end %>

@@ -311,6 +311,22 @@ Rails.application.routes.draw do
     end
   end
 
+  resources :priorbank_items, only: %i[create destroy] do
+    member do
+      post :sync
+      get :sync_details
+    end
+  end
+
+  resources :priorbank_accounts, only: [] do
+    member do
+      get :link
+      post :link_account
+      post :sync
+      get :sync_details
+    end
+  end
+
   resources :lunchflow_items, only: %i[index new create show edit update destroy] do
     collection do
       get :preload_accounts
