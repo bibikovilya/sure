@@ -68,21 +68,53 @@ class Priorbank::BrowserSession
     def login_to_priorbank
       sync_update("login", "Logging into Priorbank...")
       page.go_to LOGIN_PATH
+      page.network.wait_for_idle(timeout: 10)
+      sleep(1)
 
-      self.wait_for('//form[contains(@action, "Login")]', wait: 5, step: 0.5)
-      form = page.at_xpath('//form[contains(@action, "Login")]')
-      login_input = form.at_xpath('.//input[@name="UserName"]')
+      sync_update("login", "Waiting for login form...")
+      form = self.wait_for('//form[contains(@action, "Login")]', wait: 10, step: 0.5)
+      raise "Login form not found" unless form
+
+      sync_update("login", "Waiting for login fields...")
+      login_input = self.wait_for('//input[@name="UserName"]', wait: 5, step: 0.5)
+      raise "Login input field not found" unless login_input
+
       password_input = form.at_xpath('.//input[@name="Password"]')
-      submit_button = form.at_xpath('.//button[@type="submit"]')
+      raise "Password input field not found" unless password_input
 
-      login_input.focus.type @login
-      password_input.focus.type @password
+      submit_button = form.at_xpath('.//button[@type="submit"]')
+      raise "Submit button not found" unless submit_button
+
+      sync_update("login", "Filling in credentials...")
+      sleep(0.5)
+
+      login_input.focus
+      sleep(0.2)
+      login_input.type @login
+      sleep(0.2)
+
+      login_value = page.evaluate("document.querySelector('input[name=\"UserName\"]').value")
+      raise "Login field was not filled properly" if login_value.to_s.empty?
+      sync_update("login", "Login field filled: #{login_value.length} characters")
+
+      password_input.focus
+      sleep(0.2)
+      password_input.type @password
+      sleep(0.2)
+
+      password_value = page.evaluate("document.querySelector('input[name=\"Password\"]').value")
+      raise "Password field was not filled properly" if password_value.to_s.empty?
+      sync_update("login", "Password field filled: #{password_value.length} characters")
 
       sync_update("login", "Submitting login form...")
+      sleep(0.5)
       submit_button.click
-      page.network.wait_for_idle
 
-      raise "Failed to login to Priorbank" if page.current_title != "Рабочий стол"
+      sleep(2)
+      page.network.wait_for_idle(timeout: 15)
+
+      current_title = page.current_title
+      raise "Failed to login to Priorbank. Current page: '#{current_title}'" if current_title != "Рабочий стол"
 
       sync_update("login", "Successfully logged in", "success")
     end
