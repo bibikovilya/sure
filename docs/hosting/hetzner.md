@@ -58,8 +58,21 @@ mkdir -p /opt/sure
 cd /opt/sure
 
 # Download the Docker Compose configuration
-curl -o compose.yml https://raw.githubusercontent.com/we-promise/sure/main/compose.example.yml
+curl -o compose.yml https://raw.githubusercontent.com/bibikovilya/sure/main/compose.example.yml
+
+# Create Caddyfile for reverse proxy
+nano Caddyfile
 ```
+
+Add this Caddy configuration (replace `yourdomain.com` with your actual domain):
+
+```
+yourdomain.com {
+    reverse_proxy web:3000
+}
+```
+
+Save and close the file.
 
 ## Step 3: Configure Environment Variables
 
@@ -90,56 +103,9 @@ POSTGRES_DB="sure_production"
 - Keep your `.env` file secure and never commit it to version control
 - The `SECRET_KEY_BASE` is critical for Rails security - keep it secret
 
-## Step 4: Set Up Reverse Proxy with SSL
+## Step 4: Deploy the Application
 
-We'll use Nginx as a reverse proxy with Let's Encrypt SSL certificates:
-
-```bash
-# Install Nginx and Certbot
-apt install -y nginx certbot python3-certbot-nginx
-
-# Create Nginx configuration for your domain
-nano /etc/nginx/sites-available/sure
-```
-
-Add this Nginx configuration (replace `yourdomain.com` with your actual domain):
-
-```nginx
-server {
-    listen 80;
-    server_name yourdomain.com www.yourdomain.com;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Host $host;
-        proxy_set_header X-Forwarded-Port $server_port;
-    }
-}
-```
-
-```bash
-# Enable the site
-ln -s /etc/nginx/sites-available/sure /etc/nginx/sites-enabled/
-rm /etc/nginx/sites-enabled/default
-
-# Test Nginx configuration
-nginx -t
-
-# Start Nginx
-systemctl enable nginx
-systemctl start nginx
-
-# Get SSL certificate
-certbot --nginx -d yourdomain.com -d www.yourdomain.com
-```
-
-## Step 5: Deploy the Application
-
-Now let's deploy the Sure application:
+Now let's deploy the Sure application with Caddy:
 
 ```bash
 # Navigate to the application directory
@@ -148,7 +114,7 @@ cd /opt/sure
 # Pull the latest Docker images
 docker compose pull
 
-# Start the application
+# Start the application (Caddy will automatically get SSL certificates)
 docker compose up -d
 
 # Check if everything is running
@@ -158,7 +124,7 @@ docker compose ps
 docker compose logs -f
 ```
 
-## Step 6: Test the Deployment
+## Step 5: Test the Deployment
 
 Verify your deployment is working:
 
@@ -168,6 +134,9 @@ curl -I https://yourdomain.com
 
 # Check Docker container health
 docker compose ps
+
+# Check Caddy logs to verify SSL certificate was obtained
+docker compose logs caddy
 ```
 
 Now you can:
@@ -176,7 +145,7 @@ Now you can:
 2. **Create your admin account**: Click "Create your account" on the login page
 3. **Set up your first family**: Follow the onboarding process
 
-## Step 7: Set Up Automated Backups
+## Step 6: Set Up Automated Backups
 
 Create a backup script to protect your data:
 
@@ -221,7 +190,7 @@ Add this line to crontab:
 0 2 * * * /opt/sure/backup.sh >> /var/log/sure-backup.log 2>&1
 ```
 
-## Step 8: Set Up Basic Monitoring
+## Step 7: Set Up Basic Monitoring
 
 Create a health check script to monitor your application:
 
@@ -280,6 +249,7 @@ docker compose logs -f
 docker compose logs -f web
 docker compose logs -f worker
 docker compose logs -f db
+docker compose logs -f caddy
 ```
 
 ### Restart services:
@@ -330,8 +300,8 @@ Your deployment includes several security measures:
 # Check logs for errors
 docker compose logs -f
 
-# Check if ports are available
-netstat -tulpn | grep :3000
+# Check if ports are available (80 and 443 for Caddy)
+netstat -tulpn | grep -E ':(80|443)'
 ```
 
 **Database connection issues:**
@@ -345,11 +315,14 @@ docker compose exec db psql -U sure_user -d sure_production -c "SELECT 1;"
 
 **SSL certificate issues:**
 ```bash
-# Renew certificates
-certbot renew --dry-run
+# Check Caddy logs for certificate errors
+docker compose logs caddy
 
-# Check certificate status
-certbot certificates
+# Verify DNS is pointing to your server
+dig yourdomain.com
+
+# Restart Caddy to retry certificate
+docker compose restart caddy
 ```
 
 **Out of disk space:**
@@ -379,7 +352,7 @@ docker compose ps
 For better performance on Hetzner Cloud:
 
 1. **Use SSD storage**: Hetzner Cloud provides NVMe SSD storage by default
-2. **Choose appropriate server size**: 
+2. **Choose appropriate server size**:
    - Minimum: CX21 (2 vCPU, 4GB RAM)
    - Recommended: CX31 (2 vCPU, 8GB RAM) for multiple users
 3. **Enable swap** (if needed):
@@ -431,4 +404,4 @@ If you encounter issues:
 - Use strong passwords for all accounts
 - Consider setting up SSH key authentication instead of password authentication
 - Regularly review your firewall rules: `ufw status`
-- Monitor your SSL certificate expiration: `certbot certificates`
+- SSL certificates are automatically renewed by Caddy (no manual intervention needed)
