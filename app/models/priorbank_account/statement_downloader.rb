@@ -138,7 +138,7 @@ class PriorbankAccount::StatementDownloader
         sleep(0.2)
 
         download_started = false
-        page.downloads.wait(timeout: 10) do
+        page.downloads.wait(10) do
           link.click
           download_started = true
         end

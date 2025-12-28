@@ -145,6 +145,27 @@ class Priorbank::BrowserSession
     end
 
     def close_popups
+      begin
+        popup = page.at_css("div.k-widget.k-window")
+        return unless popup
+
+        is_visible = popup.visible? rescue false
+        return unless is_visible
+
+        close_button = popup.at_css("span.k-i-close")
+        if close_button
+          close_button.focus.click
+          sync_update("popup", "Closed a popup")
+          sleep(0.5)
+        else
+          sync_update("popup", "No close button found on popup")
+        end
+      rescue => e
+        sync_update("popup", "Error while closing popup: #{e.message}")
+      end
+    end
+
+    def open_cards_page
       max_attempts = 10
       attempts = 0
 
@@ -152,64 +173,28 @@ class Priorbank::BrowserSession
         attempts += 1
         break if attempts > max_attempts
 
-        # First check if we can see the menu - if yes, we're done
         begin
-          menu_visible = page.css("span.menu-item-parent").any? { |menu| menu.text == "Мои продукты" } rescue false
-          break if menu_visible
-        rescue => e
-          sync_update("popup", "Waiting for menu to be accessible...")
+          sync_update("navigation", "Navigating to cards page (attempt #{attempts})...")
+
+          close_popups
           sleep(0.5)
-          next
-        end
 
-        # Try to find and close any visible popups
-        begin
-          popup = page.at_css("div.k-widget.k-window")
+          page.css("span.menu-item-parent").find { |menu| menu.text == "Мои продукты" }.click
+          sleep(0.3)
+          page.css("span.menu-item-parent").find { |menu| menu.text == "Карты" }.click
 
-          # If no popup found or it's not visible, we're done
-          break unless popup
-          is_visible = popup.visible? rescue false
-          break unless is_visible
+          self.wait_for("div.bank-cards-list", init: 1, wait: 5, step: 0.5)
 
-          # Try to close the popup
-          close_button = popup.at_css("span.k-i-close")
-          if close_button
-            close_button.focus.click
-            sync_update("popup", "Closed popup #{attempts}")
-            sleep(0.5) # Wait for popup close animation
-          else
-            sync_update("popup", "No close button found on popup")
-            break
+          if page.current_title == "Платежные карточки"
+            sync_update("navigation", "Cards page loaded", "success")
+            return
           end
         rescue => e
-          sync_update("popup", "Error while closing popup: #{e.message}")
-          # If we get an error, wait a bit and try again
-          sleep(0.5)
+          sync_update("navigation", "Attempt #{attempts} failed: #{e.message}")
+          sleep(1)
+          next if attempts < max_attempts
+          raise "Failed to open cards page after #{max_attempts} attempts: #{e.message}"
         end
       end
-
-      # Final verification
-      begin
-        menu_found = page.css("span.menu-item-parent").any? { |menu| menu.text == "Мои продукты" } rescue false
-        if menu_found
-          sync_update("popup", "All popups closed, menu is accessible", "success")
-        else
-          sync_update("popup", "Menu might not be accessible yet, but continuing...", "warning")
-        end
-      rescue => e
-        sync_update("popup", "Could not verify menu accessibility: #{e.message}", "warning")
-      end
-    end
-
-    def open_cards_page
-      sync_update("navigation", "Navigating to cards page...")
-      page.css("span.menu-item-parent").find { |menu| menu.text == "Мои продукты" }.click
-      page.css("span.menu-item-parent").find { |menu| menu.text == "Карты" }.click
-
-      self.wait_for("div.bank-cards-list", init: 1, wait: 5, step: 0.5)
-
-      raise "Failed to open cards page" if page.current_title != "Платежные карточки"
-
-      sync_update("navigation", "Cards page loaded", "success")
     end
 end
