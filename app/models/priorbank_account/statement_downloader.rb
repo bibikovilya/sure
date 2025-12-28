@@ -122,50 +122,63 @@ class PriorbankAccount::StatementDownloader
 
       page.downloads.set_behavior(save_path: download_path, behavior: :allow)
 
-      attachments = page.css("ul.attachments li a")
-      sync_update("download_statement", "Found #{attachments.size} attachment(s)")
-
-      link = attachments.find do |a|
-        a.at_css("i.file-icon-csv") || a.attribute("href")&.include?("type=4")
-      end
-
-      raise "CSV download link not found" unless link
-
-      sync_update("download_statement", "Clicking CSV download link")
-
-      begin
-        link.focus
-        sleep(0.2)
-
-        download_started = false
-        page.downloads.wait(10) do
-          link.click
-          download_started = true
-        end
-      rescue => e
-        sync_update("download_statement", "Download wait failed: #{e.message}")
-        raise "Download did not start: #{e.message}" unless download_started
-      end
-
-      sync_update("download_statement", "Waiting for file to be written to disk...")
-
-      max_attempts = 10
-      attempt = 0
+      max_download_attempts = 5
+      download_attempt = 0
       file_found = false
 
-      while attempt < max_attempts && !file_found
-        files = Dir.glob(File.join(download_path, "*.csv"))
+      while download_attempt < max_download_attempts && !file_found
+        download_attempt += 1
+        sync_update("download_statement", "Download attempt #{download_attempt}/#{max_download_attempts}...")
 
-        if files.any? && File.exist?(files.first) && File.size(files.first) > 0
-          file_found = true
-          sync_update("download_statement", "File found: #{File.basename(files.first)} (#{File.size(files.first)} bytes)")
-        else
-          attempt += 1
-          sleep(0.5)
+        attachments = page.css("ul.attachments li a")
+        sync_update("download_statement", "Found #{attachments.size} attachment(s)")
+
+        link = attachments.find do |a|
+          a.at_css("i.file-icon-csv") || a.attribute("href")&.include?("type=4")
+        end
+
+        unless link
+          sync_update("download_statement", "CSV download link not found on attempt #{download_attempt}")
+          sleep(1)
+          next
+        end
+
+        sync_update("download_statement", "Clicking CSV download link (attempt #{download_attempt})")
+
+        begin
+          link.focus
+          sleep(0.2)
+
+          page.downloads.wait(10) do
+            link.click
+          end
+
+          sync_update("download_statement", "Waiting for file to be written to disk...")
+
+          max_file_wait = 10
+          file_wait_attempt = 0
+
+          while file_wait_attempt < max_file_wait && !file_found
+            files = Dir.glob(File.join(download_path, "*.csv"))
+
+            if files.any? && File.exist?(files.first) && File.size(files.first) > 0
+              file_found = true
+              sync_update("download_statement", "File found: #{File.basename(files.first)} (#{File.size(files.first)} bytes)")
+            else
+              file_wait_attempt += 1
+              sleep(0.5)
+            end
+          end
+
+          break if file_found
+          sync_update("download_statement", "File not found after click, retrying...")
+        rescue => e
+          sync_update("download_statement", "Download attempt #{download_attempt} failed: #{e.message}")
+          sleep(1)
         end
       end
 
-      raise "CSV file not found after download completed (checked #{download_path})" unless file_found
+      raise "CSV file not found after #{max_download_attempts} download attempts (checked #{download_path})" unless file_found
 
       sync_update("download_statement", "Statement file downloaded", "success")
     end
