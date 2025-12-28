@@ -31,19 +31,36 @@ x-rails-env: &rails_env
   SELF_HOSTED: "true"
   RAILS_FORCE_SSL: "false"
   RAILS_ASSUME_SSL: "false"
+  RAILS_ENV: ${RAILS_ENV:-production}
   DB_HOST: db
   DB_PORT: 5432
   REDIS_URL: redis://redis:6379/1
+  SIDEKIQ_WEB_USERNAME: ${SIDEKIQ_WEB_USERNAME:-sure}
+  SIDEKIQ_WEB_PASSWORD: ${SIDEKIQ_WEB_PASSWORD:-sure}
+  ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: ${ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY}
+  ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: ${ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY}
+  ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: ${ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT}
 # NOTE: enabling OpenAI will incur costs when you use AI-related features in the app (chat, rules).  Make sure you have set appropriate spend limits on your account before adding this.
   OPENAI_ACCESS_TOKEN: ${OPENAI_ACCESS_TOKEN}
 
 services:
+  caddy:
+    image: caddy:latest
+    restart: unless-stopped
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - sure_net
+
   web:
     image: ghcr.io/bibikovilya/sure:latest
     volumes:
       - app-storage:/rails/storage
-    ports:
-      - 3000:3000
     restart: unless-stopped
     environment:
       <<: *rails_env
@@ -103,6 +120,8 @@ volumes:
   app-storage:
   postgres-data:
   redis-data:
+  caddy-data:
+  caddy-config:
 
 networks:
   sure_net:
