@@ -60,17 +60,14 @@ cd /opt/sure
 # Download the Docker Compose configuration
 curl -o compose.yml https://raw.githubusercontent.com/bibikovilya/sure/main/compose.example.yml
 
-# Create Caddyfile for reverse proxy
+# Download the Caddyfile
+curl -o Caddyfile https://raw.githubusercontent.com/bibikovilya/sure/main/Caddyfile
+
+# Edit the Caddyfile to set your domain
 nano Caddyfile
 ```
 
-Add this Caddy configuration (replace `yourdomain.com` with your actual domain):
-
-```
-yourdomain.com {
-    reverse_proxy web:3000
-}
-```
+Update the first line to use your actual domain (replace `yourdomain.com` with your domain).
 
 Save and close the file.
 

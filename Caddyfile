@@ -1,0 +1,11 @@
+# Caddyfile for Sure application
+# This file configures Caddy as a reverse proxy with automatic HTTPS
+
+# Replace 'yourdomain.com' with your actual domain
+yourdomain.com {
+    # Reverse proxy to the Rails application
+    reverse_proxy web:3000
+
+    # Enable gzip compression
+    encode gzip
+}
