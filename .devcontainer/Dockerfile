@@ -15,10 +15,20 @@ RUN apt-get update -qq \
     libyaml-dev \
     libyaml-0-2 \
     openssh-client \
-    postgresql-client \
     vim \
     procps \
+    chromium \
+    chromium-driver \
+    gnupg \
+    lsb-release \
+  && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg \
+  && echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+  && apt-get update -qq \
+  && apt-get -y install --no-install-recommends postgresql-client-16 \
   && rm -rf /var/lib/apt/lists /var/cache/apt/archives
+
+# Set environment variable for Chrome/Chromium browser path
+ENV BROWSER_PATH=/usr/bin/chromium
 
 RUN gem install bundler foreman
 
