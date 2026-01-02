@@ -71,7 +71,7 @@ class TransferTest < ActiveSupport::TestCase
       transfer.save
     end
 
-    assert_equal "Must be within 10 days", transfer.errors.full_messages.first
+    assert_equal "Must be within 4 days", transfer.errors.full_messages.first
   end
 
   test "transfer must be from the same family" do
