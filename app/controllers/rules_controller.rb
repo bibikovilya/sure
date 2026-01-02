@@ -12,6 +12,16 @@ class RulesController < ApplicationController
     @direction = "asc" unless [ "asc", "desc" ].include?(@direction)
 
     @rules = Current.family.rules.order(@sort_by => @direction)
+
+    # Fetch recent rule runs with pagination
+    recent_runs_scope = RuleRun
+                          .joins(:rule)
+                          .where(rules: { family_id: Current.family.id })
+                          .recent
+                          .includes(:rule)
+
+    @pagy, @recent_runs = pagy(recent_runs_scope, limit: params[:per_page] || 20, page_param: :runs_page)
+
     render layout: "settings"
   end
 
@@ -19,6 +29,22 @@ class RulesController < ApplicationController
     @rule = Current.family.rules.build(
       resource_type: params[:resource_type] || "transaction",
     )
+
+    if params[:name].present?
+      @rule.name = params[:name]
+      @rule.conditions.build(
+        condition_type: "transaction_name",
+        operator: "like",
+        value: params[:name]
+      )
+    end
+
+    if params[:action_type].present? && params[:action_value].present?
+      @rule.actions.build(
+        action_type: params[:action_type],
+        value: params[:action_value]
+      )
+    end
   end
 
   def create

@@ -7,6 +7,7 @@ class SimplefinItem::Importer
     @simplefin_item = simplefin_item
     @simplefin_provider = simplefin_provider
     @sync = sync
+    @enqueued_holdings_job_ids = Set.new
   end
 
   def import
@@ -15,8 +16,14 @@ class SimplefinItem::Importer
     Rails.logger.info "SimplefinItem::Importer - sync_start_date: #{simplefin_item.sync_start_date.inspect}"
 
     begin
-      if simplefin_item.last_synced_at.nil?
-        # First sync - use chunked approach to get full history
+      # Defensive guard: If last_synced_at is set but there are linked accounts
+      # with no transactions captured yet (typical after a balances-only run),
+      # force the first full run to use chunked history to backfill.
+      linked_accounts = simplefin_item.simplefin_accounts.joins(:account)
+      no_txns_yet = linked_accounts.any? && linked_accounts.all? { |sfa| sfa.raw_transactions_payload.blank? }
+
+      if simplefin_item.last_synced_at.nil? || no_txns_yet
+        # First sync (or balances-only pre-run) — use chunked approach to get full history
         Rails.logger.info "SimplefinItem::Importer - Using chunked history import"
         import_with_chunked_history
       else
@@ -109,6 +116,51 @@ class SimplefinItem::Importer
       @stats ||= {}
     end
 
+    # Heuristics to set a SimpleFIN account inactive when upstream indicates closure/hidden
+    # or when we repeatedly observe zero balances and zero holdings. This should not block
+    # import and only sets a flag and suggestion via sync stats.
+    def update_inactive_state(simplefin_account, account_data)
+      payload = (account_data || {}).with_indifferent_access
+      raw = (simplefin_account.raw_payload || {}).with_indifferent_access
+
+      # Flags from payloads
+      closed = [ payload[:closed], payload[:hidden], payload.dig(:extra, :closed), raw[:closed], raw[:hidden] ].compact.any? { |v| v == true || v.to_s == "true" }
+
+      balance = payload[:balance]
+      avail = payload[:"available-balance"]
+      holdings = payload[:holdings]
+      amounts = [ balance, avail ].compact
+      zeroish_balance = amounts.any? && amounts.all? { |x| x.to_d.zero? rescue false }
+      no_holdings = !(holdings.is_a?(Array) && holdings.any?)
+
+      stats["zero_runs"] ||= {}
+      stats["inactive"] ||= {}
+      key = simplefin_account.account_id.presence || simplefin_account.id
+      key = key.to_s
+      # Ensure key exists and defaults to false (so tests don't read nil)
+      stats["inactive"][key] = false unless stats["inactive"].key?(key)
+
+      if closed
+        stats["inactive"][key] = true
+        stats["hints"] = Array(stats["hints"]) + [ "Some accounts appear closed/hidden upstream. You can relink or hide them." ]
+        return
+      end
+
+      if zeroish_balance && no_holdings
+        stats["zero_runs"][key] = stats["zero_runs"][key].to_i + 1
+        # Cap to avoid unbounded growth
+        stats["zero_runs"][key] = [ stats["zero_runs"][key], 10 ].min
+      else
+        stats["zero_runs"][key] = 0
+        stats["inactive"][key] = false
+      end
+
+      if stats["zero_runs"][key].to_i >= 3
+        stats["inactive"][key] = true
+        stats["hints"] = Array(stats["hints"]) + [ "One or more accounts show no balance/holdings for multiple syncs — consider relinking or marking inactive." ]
+      end
+    end
+
     # Track seen error fingerprints during a single importer run to avoid double counting
     def seen_errors
       @seen_errors ||= Set.new
@@ -165,9 +217,15 @@ class SimplefinItem::Importer
       max_requests = 22
       current_end_date = Time.current
 
-      # Use user-selected sync_start_date if available, otherwise use default lookback
+      # Decide how far back to walk:
+      # - If the user set a custom sync_start_date, honor it
+      # - Else, for first-time chunked history, walk back up to the provider-safe
+      #   limit implied by chunking so we actually import meaningful history.
+      #   We do NOT use the small initial lookback (7 days) here, because that
+      #   would clip the very first chunk to ~1 week and prevent further history.
       user_start_date = simplefin_item.sync_start_date
-      default_start_date = initial_sync_lookback_period.days.ago
+      implied_max_lookback_days = chunk_size_days * max_requests
+      default_start_date = implied_max_lookback_days.days.ago
       target_start_date = user_start_date ? user_start_date.beginning_of_day : default_start_date
 
       # Enforce maximum 3-year lookback to respect SimpleFin's actual 60-day limit per request
@@ -345,6 +403,10 @@ class SimplefinItem::Importer
     # Returns a Hash payload with keys like :accounts, or nil when an error is
     # handled internally via `handle_errors`.
     def fetch_accounts_data(start_date:, end_date: nil, pending: nil)
+      # Determine whether to include pending based on explicit arg or global config.
+      # `Rails.configuration.x.simplefin.include_pending` is ENV-backed.
+      effective_pending = pending.nil? ? Rails.configuration.x.simplefin.include_pending : pending
+
       # Debug logging to track exactly what's being sent to SimpleFin API
       start_str = start_date.respond_to?(:strftime) ? start_date.strftime("%Y-%m-%d") : "none"
       end_str = end_date.respond_to?(:strftime) ? end_date.strftime("%Y-%m-%d") : "current"
@@ -353,7 +415,7 @@ class SimplefinItem::Importer
       else
         "unknown"
       end
-      Rails.logger.info "SimplefinItem::Importer - API Request: #{start_str} to #{end_str} (#{days_requested} days)"
+      Rails.logger.info "SimplefinItem::Importer - API Request: #{start_str} to #{end_str} (#{days_requested} days) pending=#{effective_pending ? 1 : 0}"
 
       begin
         # Track API request count for quota awareness
@@ -362,7 +424,7 @@ class SimplefinItem::Importer
           simplefin_item.access_url,
           start_date: start_date,
           end_date: end_date,
-          pending: pending
+          pending: effective_pending
         )
         # Soft warning when approaching SimpleFin daily refresh guidance
         if stats["api_requests"].to_i >= 20
@@ -376,6 +438,11 @@ class SimplefinItem::Importer
         else
           raise e
         end
+      end
+
+      # Optional raw payload debug logging (guarded by ENV to avoid spam)
+      if Rails.configuration.x.simplefin.debug_raw
+        Rails.logger.debug("SimpleFIN raw: #{accounts_data.inspect}")
       end
 
       # Handle errors if present in response
@@ -441,21 +508,93 @@ class SimplefinItem::Importer
         org_data: account_data[:org]
       }
 
-      # Merge transactions from chunked imports (accumulate historical data)
+      # Merge transactions from chunked/regular imports (accumulate history).
+      # Prefer non-pending records with a real posted timestamp over earlier
+      # pending placeholders that sometimes come back with posted: 0.
       if transactions.is_a?(Array) && transactions.any?
         existing_transactions = simplefin_account.raw_transactions_payload.to_a
-        merged_transactions = (existing_transactions + transactions).uniq do |tx|
-          tx = tx.with_indifferent_access
-          tx[:id] || tx[:fitid] || [ tx[:posted], tx[:amount], tx[:description] ]
+
+        # Build a map of key => best_tx
+        best_by_key = {}
+
+        comparator = lambda do |a, b|
+          ax = a.with_indifferent_access
+          bx = b.with_indifferent_access
+
+          # Key dates
+          a_posted = ax[:posted].to_i
+          b_posted = bx[:posted].to_i
+          a_trans  = ax[:transacted_at].to_i
+          b_trans  = bx[:transacted_at].to_i
+
+          a_pending = !!ax[:pending]
+          b_pending = !!bx[:pending]
+
+          # 1) Prefer real posted date over 0/blank
+          a_has_posted = a_posted > 0
+          b_has_posted = b_posted > 0
+          return a if a_has_posted && !b_has_posted
+          return b if b_has_posted && !a_has_posted
+
+          # 2) Prefer later posted date
+          if a_posted != b_posted
+            return a_posted > b_posted ? a : b
+          end
+
+          # 3) Prefer non-pending over pending
+          if a_pending != b_pending
+            return a_pending ? b : a
+          end
+
+          # 4) Prefer later transacted_at
+          if a_trans != b_trans
+            return a_trans > b_trans ? a : b
+          end
+
+          # 5) Stable: keep 'a'
+          a
         end
-        attrs[:raw_transactions_payload] = merged_transactions
+
+        build_key = lambda do |tx|
+          t = tx.with_indifferent_access
+          t[:id] || t[:fitid] || [ t[:posted], t[:amount], t[:description] ]
+        end
+
+        (existing_transactions + transactions).each do |tx|
+          key = build_key.call(tx)
+          if (cur = best_by_key[key])
+            best_by_key[key] = comparator.call(cur, tx)
+          else
+            best_by_key[key] = tx
+          end
+        end
+
+        attrs[:raw_transactions_payload] = best_by_key.values
       end
 
-      # Preserve most recent holdings (don't overwrite current positions with older data)
-      if holdings.is_a?(Array) && holdings.any? && simplefin_account.raw_holdings_payload.blank?
-        attrs[:raw_holdings_payload] = holdings
+      # Track whether incoming holdings are new/changed so we can materialize and refresh balances
+      holdings_changed = false
+      if holdings.is_a?(Array) && holdings.any?
+        prior = simplefin_account.raw_holdings_payload.to_a
+        if prior != holdings
+          attrs[:raw_holdings_payload] = holdings
+          # Also mirror into raw_payload['holdings'] so downstream calculators can use it
+          raw = simplefin_account.raw_payload.is_a?(Hash) ? simplefin_account.raw_payload.deep_dup : {}
+          raw = raw.with_indifferent_access
+          raw[:holdings] = holdings
+          attrs[:raw_payload] = raw
+          holdings_changed = true
+        end
       end
+
       simplefin_account.assign_attributes(attrs)
+
+      # Inactive detection/toggling (non-blocking)
+      begin
+        update_inactive_state(simplefin_account, account_data)
+      rescue => e
+        Rails.logger.warn("SimpleFin: inactive-state evaluation failed for sfa=#{simplefin_account.id || account_id}: #{e.class} - #{e.message}")
+      end
 
       # Final validation before save to prevent duplicates
       if simplefin_account.account_id.blank?
@@ -464,6 +603,37 @@ class SimplefinItem::Importer
 
       begin
         simplefin_account.save!
+
+        # Post-save side effects
+        acct = simplefin_account.current_account
+        if acct
+          # Refresh credit attributes when available-balance present
+          if acct.accountable_type == "CreditCard" && account_data[:"available-balance"].present?
+            begin
+              SimplefinAccount::Liabilities::CreditProcessor.new(simplefin_account).process
+            rescue => e
+              Rails.logger.warn("SimpleFin: credit post-import refresh failed for sfa=#{simplefin_account.id}: #{e.class} - #{e.message}")
+            end
+          end
+
+          # If holdings changed for an investment/crypto account, enqueue holdings apply job and recompute cash balance
+          if holdings_changed && [ "Investment", "Crypto" ].include?(acct.accountable_type)
+            # Debounce per importer run per SFA
+            unless @enqueued_holdings_job_ids.include?(simplefin_account.id)
+              SimplefinHoldingsApplyJob.perform_later(simplefin_account.id)
+              @enqueued_holdings_job_ids << simplefin_account.id
+            end
+
+            # Recompute cash balance using existing calculator; avoid altering canonical ledger balances
+            begin
+              calculator = SimplefinAccount::Investments::BalanceCalculator.new(simplefin_account)
+              new_cash = calculator.cash_balance
+              acct.update!(cash_balance: new_cash)
+            rescue => e
+              Rails.logger.warn("SimpleFin: cash balance recompute failed for sfa=#{simplefin_account.id}: #{e.class} - #{e.message}")
+            end
+          end
+        end
       rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
         # Treat duplicates/validation failures as partial success: count and surface friendly error, then continue
         stats["accounts_skipped"] = stats.fetch("accounts_skipped", 0) + 1
@@ -474,6 +644,10 @@ class SimplefinItem::Importer
         register_error(message: msg, category: "other", account_id: account_id, name: account_data[:name])
         persist_stats!
         nil
+      ensure
+        # Ensure stats like zero_runs/inactive are persisted even when no errors occur,
+        # particularly helpful for focused unit tests that call import_account directly.
+        persist_stats!
       end
     end
 
@@ -599,7 +773,9 @@ class SimplefinItem::Importer
     end
 
     def initial_sync_lookback_period
-      # Default to 7 days for initial sync to avoid API limits
+      # Default to 7 days for initial sync. Providers that support deeper
+      # history will supply it via chunked fetches, and users can optionally
+      # set a custom `sync_start_date` to go further back.
       7
     end
 

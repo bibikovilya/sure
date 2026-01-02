@@ -28,6 +28,8 @@ on:
       - 'v*'
     branches:
       - main
+    paths-ignore:
+      - 'charts/**'
 
 env:
   REGISTRY: ghcr.io

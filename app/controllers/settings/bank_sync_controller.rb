@@ -25,6 +25,13 @@ class Settings::BankSyncController < ApplicationController
         rel: "noopener noreferrer"
       },
       {
+        name: "Enable Banking (beta)",
+        description: "European bank connections via open banking APIs across multiple countries.",
+        path: "https://enablebanking.com",
+        target: "_blank",
+        rel: "noopener noreferrer"
+      },
+      {
         name: "PriorBank",
         description: "Belarus bank connections via web scraping.",
         path: "https://priorbank.by",
