@@ -1,0 +1,360 @@
+version: '3'
+
+# Taskfile for Sure production server management
+# Install Task: https://taskfile.dev/installation/
+#
+# Usage:
+#   task deploy        # Deploy/update the application
+#   task logs          # View all logs
+#   task restart       # Restart all services
+#   task backup        # Create a backup
+#   task status        # Check service status
+
+silent: true
+
+vars:
+  APP_DIR: /home/sure/sure
+  BACKUP_DIR: /home/sure/sure/backups
+  COMPOSE: docker compose
+
+tasks:
+  # Deployment tasks
+  deploy:
+    desc: Pull latest images and update the application
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - '{{.COMPOSE}} pull web worker'
+      - '{{.COMPOSE}} up --no-deps -d web worker'
+      - echo "Deployment complete. Check logs with 'task logs:web'"
+
+  deploy:tag:
+    desc: Deploy a specific image tag (specify TAG=version)
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - |
+        if [ -z "{{.TAG}}" ]; then
+          echo "Error: Please specify TAG=version"
+          echo "Example: task deploy:tag TAG=v1.2.3"
+          echo "Available tags: https://github.com/bibikovilya/sure/pkgs/container/sure"
+          exit 1
+        fi
+      - echo "Pulling image with tag {{.TAG}}..."
+      - docker pull ghcr.io/bibikovilya/sure:{{.TAG}}
+      - echo "Updating compose.yml to use tag {{.TAG}}..."
+      - "sed -i.bak 's|image: ghcr.io/bibikovilya/sure:.*|image: ghcr.io/bibikovilya/sure:{{.TAG}}|g' compose.yml"
+      - '{{.COMPOSE}} up --no-deps -d web worker'
+      - echo "Deployed version {{.TAG}}. Check logs with 'task logs:web'"
+
+  deploy:full:
+    desc: Pull latest images and restart all services
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - '{{.COMPOSE}} pull'
+      - '{{.COMPOSE}} up -d'
+      - echo "Full deployment complete. Check status with 'task status'"
+
+  # Log viewing tasks
+  logs:
+    desc: View logs from all services
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - '{{.COMPOSE}} logs -f'
+
+  logs:web:
+    desc: View web application logs
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - '{{.COMPOSE}} logs -f web'
+
+  logs:worker:
+    desc: View background worker logs
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - '{{.COMPOSE}} logs -f worker'
+
+  logs:db:
+    desc: View database logs
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - '{{.COMPOSE}} logs -f db'
+
+  logs:caddy:
+    desc: View Caddy (web server) logs
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - '{{.COMPOSE}} logs -f caddy'
+
+  logs:redis:
+    desc: View Redis logs
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - '{{.COMPOSE}} logs -f redis'
+
+  # Service management tasks
+  status:
+    desc: Show status of all services
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - '{{.COMPOSE}} ps'
+      - echo ""
+      - docker stats --no-stream
+
+  restart:
+    desc: Restart all services
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - '{{.COMPOSE}} restart'
+      - echo "All services restarted"
+
+  restart:web:
+    desc: Restart web application
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - '{{.COMPOSE}} restart web'
+
+  restart:worker:
+    desc: Restart background worker
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - '{{.COMPOSE}} restart worker'
+
+  restart:caddy:
+    desc: Restart Caddy web server
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - '{{.COMPOSE}} restart caddy'
+
+  stop:
+    desc: Stop all services
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - '{{.COMPOSE}} stop'
+
+  start:
+    desc: Start all services
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - '{{.COMPOSE}} up -d'
+
+  # Backup tasks
+  backup:
+    desc: Create backup of database and application data
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - mkdir -p {{.BACKUP_DIR}}
+      - task: backup:db
+      - task: backup:storage
+      - echo "Backup complete in {{.BACKUP_DIR}}"
+
+  backup:db:
+    desc: Backup database only
+    dir: '{{.APP_DIR}}'
+    vars:
+      TIMESTAMP:
+        sh: date +%Y%m%d_%H%M%S
+    cmds:
+      - mkdir -p {{.BACKUP_DIR}}
+      - '{{.COMPOSE}} exec -T db pg_dump -U sure_user sure_production > {{.BACKUP_DIR}}/db_backup_{{.TIMESTAMP}}.sql'
+      - 'echo "Database backup created: db_backup_{{.TIMESTAMP}}.sql"'
+
+  backup:storage:
+    desc: Backup application storage only
+    dir: '{{.APP_DIR}}'
+    vars:
+      TIMESTAMP:
+        sh: date +%Y%m%d_%H%M%S
+    cmds:
+      - mkdir -p {{.BACKUP_DIR}}
+      - '{{.COMPOSE}} exec -T web tar -czf - /rails/storage > {{.BACKUP_DIR}}/storage_backup_{{.TIMESTAMP}}.tar.gz'
+      - 'echo "Storage backup created: storage_backup_{{.TIMESTAMP}}.tar.gz"'
+
+  backup:list:
+    desc: List all backups
+    cmds:
+      - ls -lh {{.BACKUP_DIR}}
+
+  backup:cleanup:
+    desc: Remove backups older than 7 days
+    cmds:
+      - find {{.BACKUP_DIR}} -name "*.sql" -mtime +30 -delete
+      - find {{.BACKUP_DIR}} -name "*.tar.gz" -mtime +30 -delete
+      - echo "Old backups cleaned up"
+
+  # Restore tasks
+  restore:db:
+    desc: Restore database from backup (specify BACKUP_FILE=filename)
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - |
+        if [ -z "{{.BACKUP_FILE}}" ]; then
+          echo "Error: Please specify BACKUP_FILE=filename"
+          echo "Example: task restore:db BACKUP_FILE=db_backup_20250128_020000.sql"
+          exit 1
+        fi
+      - '{{.COMPOSE}} exec -T db psql -U sure_user sure_production < {{.BACKUP_DIR}}/{{.BACKUP_FILE}}'
+      - echo "Database restored from {{.BACKUP_FILE}}"
+
+  restore:storage:
+    desc: Restore application storage from backup (specify BACKUP_FILE=filename)
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - |
+        if [ -z "{{.BACKUP_FILE}}" ]; then
+          echo "Error: Please specify BACKUP_FILE=filename"
+          echo "Example: task restore:storage BACKUP_FILE=storage_backup_20250128_020000.tar.gz"
+          exit 1
+        fi
+      - '{{.COMPOSE}} exec -T web tar -xzf {{.BACKUP_DIR}}/{{.BACKUP_FILE}} -C /'
+      - echo "Storage restored from {{.BACKUP_FILE}}"
+
+  # Database tasks
+  "db:console":
+    desc: Open database console
+    dir: '{{.APP_DIR}}'
+    aliases: [psql]
+    cmds:
+      - '{{.COMPOSE}} exec db psql -U sure_user sure_production'
+
+  db:migrate:
+    desc: Run database migrations
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - '{{.COMPOSE}} exec web bin/rails db:migrate'
+
+  # Rails tasks
+  "rails:console":
+    desc: Open Rails console
+    dir: '{{.APP_DIR}}'
+    aliases: [rc]
+    cmds:
+      - '{{.COMPOSE}} exec web bin/rails console'
+
+  bash:
+    desc: Open Bash shell in web container
+    dir: '{{.APP_DIR}}'
+    aliases: [sh]
+    cmds:
+      - '{{.COMPOSE}} exec web bash'
+
+  # Monitoring tasks
+  health:
+    desc: Check application health
+    cmds:
+      - curl -f -s https://sure.bibikov.dev > /dev/null && echo "✓ Application is healthy" || echo "✗ Application is down"
+      - task: status
+
+  stats:
+    desc: Show real-time container resource usage
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - docker stats
+
+  disk:
+    desc: Show disk usage
+    cmds:
+      - df -h
+      - echo ""
+      - echo "Docker disk usage:"
+      - docker system df
+
+  # Cleanup tasks
+  clean:
+    desc: Clean up Docker resources
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - docker system prune -f
+      - echo "Docker cleanup complete"
+
+  clean:all:
+    desc: 'Clean up all Docker resources including volumes (WARNING: destructive)'
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - 'echo "WARNING: This will remove all unused Docker resources including volumes!"'
+      - 'docker system prune -a --volumes -f'
+      - 'echo "Complete Docker cleanup done"'
+
+  # Update tasks
+  update:system:
+    desc: Update system packages
+    cmds:
+      - apt update
+      - apt upgrade -y
+      - echo "System packages updated"
+
+  # Setup tasks
+  setup:scripts:
+    desc: Set up backup and health check scripts
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - task: setup:backup-script
+      - task: setup:health-script
+      - echo "Scripts set up. Add to crontab with 'task setup:cron'"
+
+  setup:backup-script:
+    desc: Create backup script
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - |
+        cat > backup.sh << 'EOF'
+        #!/bin/bash
+        cd {{.APP_DIR}}
+        task backup
+        task backup:cleanup
+        EOF
+      - chmod +x backup.sh
+      - echo "Backup script created at {{.APP_DIR}}/backup.sh"
+
+  setup:health-script:
+    desc: Create health check script
+    dir: '{{.APP_DIR}}'
+    cmds:
+      - |
+        cat > health-check.sh << 'EOF'
+        #!/bin/bash
+        if curl -f -s https://sure.bibikov.dev > /dev/null; then
+            echo "$(date): Application is healthy"
+        else
+            echo "$(date): Application is down - restarting"
+            cd {{.APP_DIR}}
+            task restart:web restart:worker
+        fi
+        EOF
+      - chmod +x health-check.sh
+      - echo "Health check script created at {{.APP_DIR}}/health-check.sh"
+
+  setup:cron:
+    desc: Display crontab entries to add manually
+    cmds:
+      - |
+        echo "Add these entries to crontab with 'crontab -e':"
+        echo ""
+        echo "# Daily backups at 2 AM"
+        echo "0 2 * * * cd {{.APP_DIR}} && task backup >> /var/log/sure-backup.log 2>&1"
+        echo ""
+        echo "# Health check every 5 minutes"
+        echo "*/5 * * * * {{.APP_DIR}}/health-check.sh >> /var/log/sure-health.log 2>&1"
+
+  # Info tasks
+  info:
+    desc: Display useful information
+    cmds:
+      - |
+        echo "Sure Production Server Info"
+        echo "============================"
+        echo ""
+        echo "Application directory: {{.APP_DIR}}"
+        echo "Backup directory: {{.BACKUP_DIR}}"
+        echo ""
+        echo "Common tasks:"
+        echo "  task deploy          - Update application"
+        echo "  task logs            - View all logs"
+        echo "  task status          - Check service status"
+        echo "  task backup          - Create backup"
+        echo "  task health          - Check application health"
+        echo ""
+        echo "For all tasks, run: task --list"
+
+  default:
+    desc: Show task list
+    cmds:
+      - task --list
