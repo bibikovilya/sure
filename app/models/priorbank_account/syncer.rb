@@ -158,8 +158,7 @@ class PriorbankAccount::Syncer
 
     def materialize_balances(transfers)
       sync_step_update("balances", "Calculating balances...")
-      strategy = account.linked? ? :reverse : :forward
-      Balance::Materializer.new(account, strategy: strategy).materialize_balances
+      Balance::Materializer.new(account, strategy: :forward).materialize_balances
 
       sync_step_update("balances", "Calculating balances for transfers...")
       Transfer.where(id: transfers.ids).each do |transfer|
