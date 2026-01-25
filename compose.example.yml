@@ -48,6 +48,8 @@ services:
     image: ghcr.io/bibikovilya/sure:latest
     volumes:
       - app-storage:/rails/storage
+    ports:
+      - 3000:3000
     restart: unless-stopped
     environment:
       <<: *rails_env
@@ -64,8 +66,6 @@ services:
     command: bundle exec sidekiq
     volumes:
       - app-storage:/rails/storage
-    ports:
-      - 3000:3000
     restart: unless-stopped
     depends_on:
       db:
