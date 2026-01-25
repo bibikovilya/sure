@@ -78,12 +78,6 @@ tasks:
     cmds:
       - '{{.COMPOSE}} logs -f db'
 
-  logs:caddy:
-    desc: View Caddy (web server) logs
-    dir: '{{.APP_DIR}}'
-    cmds:
-      - '{{.COMPOSE}} logs -f caddy'
-
   logs:redis:
     desc: View Redis logs
     dir: '{{.APP_DIR}}'
@@ -117,12 +111,6 @@ tasks:
     dir: '{{.APP_DIR}}'
     cmds:
       - '{{.COMPOSE}} restart worker'
-
-  restart:caddy:
-    desc: Restart Caddy web server
-    dir: '{{.APP_DIR}}'
-    cmds:
-      - '{{.COMPOSE}} restart caddy'
 
   stop:
     desc: Stop all services
