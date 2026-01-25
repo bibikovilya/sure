@@ -75,6 +75,77 @@ class Account::MarketDataImporterTest < ActiveSupport::TestCase
     assert_operator after, :>, before + 1, "Should insert at least two new exchange-rate rows"
   end
 
+  test "syncs inter-account exchange rates for potential transfers" do
+    family = Family.create!(name: "Smith", currency: "USD")
+
+    cad_account = family.accounts.create!(
+      name: "CAD Chequing",
+      currency: "CAD",
+      balance: 100,
+      accountable: Depository.new
+    )
+
+    eur_account = family.accounts.create!(
+      name: "EUR Savings",
+      currency: "EUR",
+      balance: 200,
+      accountable: Depository.new
+    )
+
+    existing_date = [ cad_account.start_date, eur_account.start_date ].min
+    ExchangeRate.create!(from_currency: "CAD", to_currency: "USD", date: existing_date, rate: 0.75)
+    ExchangeRate.create!(from_currency: "USD", to_currency: "CAD", date: existing_date, rate: 1.33)
+    ExchangeRate.create!(from_currency: "EUR", to_currency: "USD", date: existing_date, rate: 1.1)
+    ExchangeRate.create!(from_currency: "USD", to_currency: "EUR", date: existing_date, rate: 0.91)
+    ExchangeRate.create!(from_currency: "CAD", to_currency: "EUR", date: existing_date, rate: 0.68)
+    ExchangeRate.create!(from_currency: "EUR", to_currency: "CAD", date: existing_date, rate: 1.47)
+
+    expected_start_date = (existing_date + 1.day) - PROVIDER_BUFFER
+    end_date            = Date.current.in_time_zone("America/New_York").to_date
+
+    @exchange_rate_provider.expects(:fetch_exchange_rates)
+                           .with(from: "CAD",
+                                 to: "USD",
+                                 start_date: expected_start_date,
+                                 end_date: end_date)
+                           .returns(provider_success_response([
+                             OpenStruct.new(from: "CAD", to: "USD", date: existing_date, rate: 0.76)
+                           ]))
+
+    @exchange_rate_provider.expects(:fetch_exchange_rates)
+                           .with(from: "USD",
+                                 to: "CAD",
+                                 start_date: expected_start_date,
+                                 end_date: end_date)
+                           .returns(provider_success_response([
+                             OpenStruct.new(from: "USD", to: "CAD", date: existing_date, rate: 1.32)
+                           ]))
+
+    @exchange_rate_provider.expects(:fetch_exchange_rates)
+                           .with(from: "CAD",
+                                 to: "EUR",
+                                 start_date: expected_start_date,
+                                 end_date: end_date)
+                           .returns(provider_success_response([
+                             OpenStruct.new(from: "CAD", to: "EUR", date: existing_date, rate: 0.69)
+                           ]))
+
+    @exchange_rate_provider.expects(:fetch_exchange_rates)
+                           .with(from: "EUR",
+                                 to: "CAD",
+                                 start_date: expected_start_date,
+                                 end_date: end_date)
+                           .returns(provider_success_response([
+                             OpenStruct.new(from: "EUR", to: "CAD", date: existing_date, rate: 1.45)
+                           ]))
+
+    before = ExchangeRate.count
+    Account::MarketDataImporter.new(cad_account).import_all
+    after  = ExchangeRate.count
+
+    assert_operator after, :>, before + 2, "Should insert exchange-rate rows for inter-account pairs"
+  end
+
   test "syncs security prices for securities traded by the account" do
     family = Family.create!(name: "Smith", currency: "USD")
 

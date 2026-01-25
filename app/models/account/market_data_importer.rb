@@ -38,6 +38,9 @@ class Account::MarketDataImporter
       pair_dates[inverse_key] = [ pair_dates[inverse_key], account.start_date ].compact.min
     end
 
+    # 3. INTER-ACCOUNT PAIRS – for potential transfer matching between accounts with different currencies
+    import_inter_account_exchange_rates(pair_dates)
+
     pair_dates.each do |(source, target), start_date|
       ExchangeRate.import_provider_rates(
         from: source,
@@ -72,6 +75,31 @@ class Account::MarketDataImporter
                     .where(security: security)
                     .where(entries: { account_id: account.id })
                     .minimum("entries.date")
+    end
+
+    # Adds exchange rate pairs for transfers between accounts with different currencies
+    # This ensures that when auto_match_transfers runs, it can find exchange rates
+    # between any two account currencies, not just from account currency to family currency
+    def import_inter_account_exchange_rates(pair_dates)
+      return if account.currency == account.family.currency && !has_multi_currency_entries?
+
+      # Get all other active accounts in the family with different currencies
+      other_accounts = account.family.accounts
+                              .where(status: [ :draft, :active ])
+                              .where.not(id: account.id)
+                              .where.not(currency: account.currency)
+
+      # Group by currency to get unique currency pairs
+      other_accounts.group_by(&:currency).each do |other_currency, accounts|
+        other_start_date = accounts.map(&:start_date).compact.min
+        earliest_date = [ account.start_date, other_start_date ].compact.min
+
+        key = [ account.currency, other_currency ]
+        pair_dates[key] = [ pair_dates[key], earliest_date ].compact.min
+
+        inverse_key = [ other_currency, account.currency ]
+        pair_dates[inverse_key] = [ pair_dates[inverse_key], earliest_date ].compact.min
+      end
     end
 
     def needs_exchange_rates?
