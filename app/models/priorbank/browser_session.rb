@@ -5,8 +5,8 @@ class Priorbank::BrowserSession
 
   def initialize(login:, password:, sync: nil, headless: true)
     @browser = Ferrum::Browser.new(
-      timeout: 20,
-      process_timeout: 30,
+      timeout: 30,
+      process_timeout: 60,
       headless: headless,
       browser_options: {
         "no-sandbox": nil,
