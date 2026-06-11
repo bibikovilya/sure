@@ -193,11 +193,23 @@ class Priorbank::BrowserSession
             popup = page.at_css(selector)
             next unless popup
 
-            close_button = CLOSE_BUTTON_SELECTORS.lazy.filter_map { |btn| popup.at_css(btn) rescue nil }.first
-            if close_button
-              # Use JS click to bypass CDP visibility constraint — modal overlays
-              # can block CDP's "element must be interactive" check.
-              close_button.evaluate("this.click()")
+            # page.evaluate (page-level) dispatches JS click to bypass CDP's
+            # "element must be interactive" check that fails on modal overlays.
+            # Ferrum::Node has no #evaluate; only Ferrum::Page does.
+            closed = page.evaluate(<<~JS)
+              (function() {
+                var popup = document.querySelector(#{selector.to_json});
+                if (!popup) return 0;
+                var btns = #{CLOSE_BUTTON_SELECTORS.to_json};
+                for (var i = 0; i < btns.length; i++) {
+                  var btn = popup.querySelector(btns[i]);
+                  if (btn) { btn.click(); return 1; }
+                }
+                return 0;
+              })()
+            JS
+
+            if closed > 0
               sync_update("popup", "Closed popup (#{selector})")
               page.network.wait_for_idle(timeout: 3) rescue nil
               closed_any = true
@@ -219,9 +231,9 @@ class Priorbank::BrowserSession
 
         close_popups
 
-        js_click_menu("Мои продукты")
+        page.css("span.menu-item-parent").find { |menu| menu.text == "Мои продукты" }.click
         page.network.wait_for_idle(timeout: 5) rescue nil
-        js_click_menu("Карты")
+        page.css("span.menu-item-parent").find { |menu| menu.text == "Карты" }.click
         page.network.wait_for_idle(timeout: 5) rescue nil
 
         self.wait_for("div.bank-cards-list", wait: 5, step: 0.5)
@@ -230,16 +242,5 @@ class Priorbank::BrowserSession
 
         sync_update("navigation", "Cards page loaded", "success")
       end
-    end
-
-    def js_click_menu(text)
-      found = page.evaluate(
-        "(function() { " \
-        "var items = document.querySelectorAll('span.menu-item-parent'); " \
-        "for (var i = 0; i < items.length; i++) { " \
-        "  if (items[i].textContent.trim() === #{text.to_json}) { items[i].click(); return true; } " \
-        "} return false; })()"
-      )
-      raise "Menu item not found: #{text}" unless found
     end
 end
