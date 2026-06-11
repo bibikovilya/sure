@@ -159,10 +159,10 @@ The date window (start/end dates for the statement download) is currently calcul
 - Modify: `app/models/priorbank_account.rb`
 - Modify: `app/models/priorbank_account/syncer.rb`
 
-- [ ] Add `sync_window` instance method to `PriorbankAccount` returning `{ start_date:, end_date: }` using the same logic as the current `PriorbankAccount::Syncer#calculate_window_start`: last completed sync's `window_end_date` → latest entry date → 3 months ago fallback; `end_date` defaults to `Date.current`
-- [ ] Remove the duplicated `calculate_window_start` private method from `PriorbankAccount::Syncer`; replace its usages with `priorbank_account.sync_window[:start_date]` and `priorbank_account.sync_window[:end_date]`
-- [ ] Write tests for `PriorbankAccount#sync_window`: no syncs + no entries → 3 months ago, with prior completed sync → uses its `window_end_date`, with entries but no sync → uses latest entry date
-- [ ] Run tests: `bin/rails test test/models/priorbank_account/` — must pass before Task 6
+- [x] Add `sync_window` instance method to `PriorbankAccount` returning `{ start_date:, end_date: }` using the same logic as the current `PriorbankAccount::Syncer#calculate_window_start`: last completed sync's `window_end_date` → latest entry date → 3 months ago fallback; `end_date` defaults to `Date.current`
+- [x] Remove the duplicated `calculate_window_start` private method from `PriorbankAccount::Syncer`; replace its usages with `priorbank_account.sync_window[:start_date]` and `priorbank_account.sync_window[:end_date]`
+- [x] Write tests for `PriorbankAccount#sync_window`: no syncs + no entries → 3 months ago, with prior completed sync → uses its `window_end_date`, with entries but no sync → uses latest entry date
+- [x] Run tests: `bin/rails test test/models/priorbank_account/` — must pass before Task 6
 
 ---
 

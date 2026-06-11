@@ -35,27 +35,13 @@ class PriorbankAccount::Syncer
   private
 
     def calculate_and_save_window
-      window_start = calculate_window_start
+      window = priorbank_account.sync_window
+      window_start = sync.window_start_date.presence || window[:start_date]
       window_end = sync.window_end_date || [ window_start + 3.months, Date.current ].min
 
       sync.update!(window_start_date: window_start, window_end_date: window_end)
       sync_data_update("window_start_date", window_start)
       sync_data_update("window_end_date", window_end)
-    end
-
-    def calculate_window_start
-      # If sync has explicit window_start_date, use it
-      return sync.window_start_date if sync.window_start_date.present?
-
-      # Try to get the last successful sync's window_end_date
-      last_completed_sync = priorbank_account.syncs.where(status: "completed").order(created_at: :desc).first
-      return last_completed_sync.window_end_date if last_completed_sync&.window_end_date.present?
-
-      # Fall back to latest transaction date
-      return account.entries.maximum(:date) if account.entries.maximum(:date).present?
-
-      # Default to 3 months ago
-      3.months.ago.to_date
     end
 
     def sync_step_update(step, message, status = "in_progress")
