@@ -88,7 +88,7 @@ class Priorbank::BrowserSessionTest < ActiveSupport::TestCase
 
     screenshot_called_with = nil
     @session.stub(:screenshot_on_failure, ->(label) { screenshot_called_with = label }) do
-      @session.stub(:sleep, ->(_) {}) do
+      @session.stub(:sleep, ->(_) { }) do
         begin
           @session.with_retry(attempts: 2, base_delay: 0) { raise "final failure" }
         rescue
@@ -105,7 +105,7 @@ class Priorbank::BrowserSessionTest < ActiveSupport::TestCase
 
     screenshot_called = false
     @session.stub(:screenshot_on_failure, ->(_label) { screenshot_called = true }) do
-      @session.stub(:sleep, ->(_) {}) do
+      @session.stub(:sleep, ->(_) { }) do
         begin
           @session.with_retry(attempts: 2, base_delay: 0) { raise "failure" }
         rescue
