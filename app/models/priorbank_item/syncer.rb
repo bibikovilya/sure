@@ -8,22 +8,15 @@ class PriorbankItem::Syncer
   def perform_sync(sync)
     fetched_accounts = fetch_accounts_from_priorbank(sync)
     import_accounts(fetched_accounts, sync)
-    mark_completed(sync)
+    # Do not call complete! here. The Sync model completes the item sync once all
+    # account child syncs finish (via finalize_if_all_children_finalized).
   rescue => e
     mark_failed(sync, e)
   end
 
   def perform_post_sync
-    priorbank_item.priorbank_accounts.joins(:account_provider).each do |account|
-      pending_sync = account.syncs
-                            .where(status: :pending)
-                            .order(created_at: :desc)
-                            .first
-
-      next unless pending_sync&.data&.dig("csv_path").present?
-
-      SyncJob.perform_later(pending_sync)
-    end
+    # Account sync jobs are enqueued immediately in download_statements when each
+    # child Sync record is created. Nothing to do here.
   end
 
   private
@@ -187,13 +180,14 @@ class PriorbankItem::Syncer
           csv_path = downloader.call
 
           account.syncs.where(status: :pending).find_each(&:mark_stale!)
-          account.syncs.create!(
+          account_sync = account.syncs.create!(
             status: :pending,
             parent: item_sync,
             window_start_date: window[:start_date],
             window_end_date: window[:end_date],
             data: { "csv_path" => csv_path }
           )
+          SyncJob.perform_later(account_sync)
 
           sync_update(item_sync, "download_statements", "Statement downloaded for '#{account.name}'", "success")
         rescue => e
@@ -259,10 +253,6 @@ class PriorbankItem::Syncer
       sync.update!(sync_stats: (sync.sync_stats || {}).merge(stats))
 
       sync_update(sync, "import", "Imported #{imported_count}, updated #{updated_count} accounts", "success")
-    end
-
-    def mark_completed(sync)
-      sync.complete!
     end
 
     def mark_failed(sync, error)

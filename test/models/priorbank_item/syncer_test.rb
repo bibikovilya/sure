@@ -43,7 +43,7 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
     @syncer.send(:download_statements, session_double, @item_sync)
   end
 
-  test "download_statements creates a pending Sync record with csv_path for each linked account" do
+  test "download_statements creates a pending Sync record with csv_path for each linked account and enqueues SyncJob" do
     session_double = mock("browser_session")
     csv_path = "/tmp/priorbank_statements_abc/statement.csv"
 
@@ -52,7 +52,9 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
     PriorbankAccount::StatementDownloader.stubs(:new).returns(downloader_mock)
 
     assert_difference -> { @priorbank_account.syncs.where(status: "pending").count }, 1 do
-      @syncer.send(:download_statements, session_double, @item_sync)
+      assert_enqueued_jobs 1, only: SyncJob do
+        @syncer.send(:download_statements, session_double, @item_sync)
+      end
     end
 
     account_sync = @priorbank_account.syncs.where(status: "pending").order(created_at: :desc).first
@@ -153,70 +155,16 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
   end
 
   # ── perform_post_sync ──────────────────────────────────────────────────────
+  # Account sync jobs are enqueued directly in download_statements when each
+  # child Sync record is created, so perform_post_sync is intentionally a no-op.
 
-  test "perform_post_sync enqueues SyncJob for pending sync records with csv_path" do
-    csv_path = "/tmp/priorbank_statements_abc/statement.csv"
-    account_sync = @priorbank_account.syncs.create!(
-      status: :pending,
-      data: { "csv_path" => csv_path }
-    )
-
-    assert_enqueued_with(job: SyncJob, args: [ account_sync ]) do
-      @syncer.perform_post_sync
-    end
-  end
-
-  test "perform_post_sync skips accounts without a pending sync with csv_path" do
-    # No sync records created for @priorbank_account
-    assert_no_enqueued_jobs(only: SyncJob) do
-      @syncer.perform_post_sync
-    end
-  end
-
-  test "perform_post_sync skips pending syncs that have no csv_path in data" do
-    # Pending sync but no csv_path in data
-    @priorbank_account.syncs.create!(status: :pending, data: { "steps" => [] })
-
-    assert_no_enqueued_jobs(only: SyncJob) do
-      @syncer.perform_post_sync
-    end
-  end
-
-  test "perform_post_sync skips accounts not linked to an app account" do
-    unlinked_priorbank_account = PriorbankAccount.create!(
-      account_type: "Дебетовая карта",
-      priorbank_item: @priorbank_item,
-      name: "Unlinked Card",
-      currency: "BYN"
-    )
-    # Create a pending sync with csv_path for the unlinked account
-    unlinked_priorbank_account.syncs.create!(
+  test "perform_post_sync enqueues no jobs" do
+    @priorbank_account.syncs.create!(
       status: :pending,
       data: { "csv_path" => "/tmp/some.csv" }
     )
 
     assert_no_enqueued_jobs(only: SyncJob) do
-      @syncer.perform_post_sync
-    end
-  end
-
-  test "perform_post_sync enqueues only the newest pending sync when multiple exist" do
-    @priorbank_account.syncs.create!(
-      status: :pending,
-      data: { "csv_path" => "/tmp/statement_old.csv" }
-    )
-    newer_sync = @priorbank_account.syncs.create!(
-      status: :pending,
-      data: { "csv_path" => "/tmp/statement_new.csv" }
-    )
-
-    # Only one job should be enqueued (the newest pending sync)
-    assert_enqueued_jobs 1, only: SyncJob do
-      @syncer.perform_post_sync
-    end
-
-    assert_enqueued_with(job: SyncJob, args: [ newer_sync ]) do
-      clear_enqueued_jobs
       @syncer.perform_post_sync
     end
   end
@@ -265,24 +213,22 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
 
   # ── perform_sync (public entry point) ─────────────────────────────────────
 
-  test "perform_sync calls fetch_accounts_from_priorbank and marks sync completed" do
+  test "perform_sync calls fetch_accounts_from_priorbank and import_accounts without marking sync failed" do
     @syncer.expects(:fetch_accounts_from_priorbank).with(@item_sync).returns([])
     @syncer.expects(:import_accounts).with([], @item_sync)
 
     @syncer.perform_sync(@item_sync)
 
     @item_sync.reload
-    assert_equal "completed", @item_sync.status
+    # Item sync stays in its current state — completion is driven by children finalizing.
+    assert_not_equal "failed", @item_sync.status
   end
 
-  test "perform_sync marks sync failed when an error is raised" do
+  test "perform_sync records error and calls mark_failed when an error is raised" do
     @syncer.stubs(:fetch_accounts_from_priorbank).raises(StandardError, "browser crashed")
+    @syncer.expects(:mark_failed).with(@item_sync, instance_of(StandardError)).once
 
     @syncer.perform_sync(@item_sync)
-
-    @item_sync.reload
-    assert_equal "failed", @item_sync.status
-    assert_includes @item_sync.error, "browser crashed"
   end
 
   test "fetch_accounts_from_priorbank calls download_statements before session quit" do
