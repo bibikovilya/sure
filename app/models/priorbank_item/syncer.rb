@@ -40,6 +40,7 @@ class PriorbankItem::Syncer
         sync_update(sync, "extraction", "Successfully extracted #{accounts.count} accounts", "success")
 
         download_statements(session, sync)
+        priorbank_item.update!(status: :good)
       rescue => e
         priorbank_item.update!(status: :requires_update)
         raise e
