@@ -2,6 +2,8 @@ class Priorbank::BrowserSession
   LOGIN_PATH = "https://www.prior.by/web/"
   BROWSER_TIMEOUT = 30
   PROCESS_TIMEOUT = 60
+  POPUP_SELECTORS = [ "div.k-widget.k-window", "div.modal", '[role="dialog"]' ].freeze
+  CLOSE_BUTTON_SELECTORS = [ "span.k-i-close", ".k-window-action.k-i-close", "button.close", "[aria-label='Close']", "button[data-dismiss='modal']" ].freeze
 
   attr_reader :browser, :page, :sync, :login, :password
 
@@ -55,7 +57,19 @@ class Priorbank::BrowserSession
       (wait -= step) > 0 ? sleep(step) : break
     end
 
+    Rails.logger.warn "[Priorbank::BrowserSession] Timed out waiting for selector: #{selector}" unless node
     node
+  end
+
+  def screenshot_on_failure(label)
+    timestamp = Time.now.to_i
+    path = Rails.root.join("tmp", "priorbank-#{label}-#{timestamp}.png").to_s
+    page.screenshot(path: path, full: true)
+    Rails.logger.info "[Priorbank::BrowserSession] Screenshot saved: #{path}"
+    path
+  rescue => e
+    Rails.logger.warn "[Priorbank::BrowserSession] Failed to save screenshot for '#{label}': #{e.message}"
+    nil
   end
 
   private
@@ -69,7 +83,11 @@ class Priorbank::BrowserSession
           last_error = e
           delay = base_delay * (2**attempt)
           sync_update("retry", "Attempt #{attempt + 1}/#{attempts} failed: #{e.message}. Retrying in #{delay}s...")
-          sleep(delay) if attempt < attempts - 1
+          if attempt == attempts - 1
+            screenshot_on_failure("retry-failure") if page
+          else
+            sleep(delay)
+          end
         end
       end
       raise last_error
@@ -155,23 +173,37 @@ class Priorbank::BrowserSession
     end
 
     def close_popups
-      begin
-        popup = page.at_css("div.k-widget.k-window")
-        return unless popup
+      max_iterations = 5
+      iterations = 0
 
-        is_visible = popup.visible? rescue false
-        return unless is_visible
+      loop do
+        break if iterations >= max_iterations
 
-        close_button = popup.at_css("span.k-i-close")
-        if close_button
-          close_button.focus.click
-          sync_update("popup", "Closed a popup")
-          sleep(0.5)
-        else
-          sync_update("popup", "No close button found on popup")
+        closed_any = false
+
+        POPUP_SELECTORS.each do |selector|
+          begin
+            popup = page.at_css(selector)
+            next unless popup
+            next unless (popup.visible? rescue false)
+
+            close_button = CLOSE_BUTTON_SELECTORS.lazy.filter_map { |btn| popup.at_css(btn) rescue nil }.first
+            if close_button
+              close_button.focus.click
+              sync_update("popup", "Closed popup (#{selector})")
+              page.network.wait_for_idle(timeout: 3) rescue nil
+              closed_any = true
+            else
+              sync_update("popup", "No close button found on popup (#{selector})")
+            end
+          rescue => e
+            sync_update("popup", "Error while closing popup (#{selector}): #{e.message}")
+          end
         end
-      rescue => e
-        sync_update("popup", "Error while closing popup: #{e.message}")
+
+        break unless closed_any
+
+        iterations += 1
       end
     end
 
@@ -184,6 +216,7 @@ class Priorbank::BrowserSession
         page.css("span.menu-item-parent").find { |menu| menu.text == "Мои продукты" }.click
         page.network.wait_for_idle(timeout: 5) rescue nil
         page.css("span.menu-item-parent").find { |menu| menu.text == "Карты" }.click
+        page.network.wait_for_idle(timeout: 5) rescue nil
 
         self.wait_for("div.bank-cards-list", wait: 5, step: 0.5)
 

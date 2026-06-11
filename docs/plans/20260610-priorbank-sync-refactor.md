@@ -113,12 +113,12 @@ Make `close_popups` handle multiple popup types and re-check after each close. E
 **Files:**
 - Modify: `app/models/priorbank/browser_session.rb`
 
-- [ ] Rewrite `close_popups` to check three selectors: `div.k-widget.k-window`, `div.modal`, `[role="dialog"]`; close all visible ones in a loop until none remain or max 5 iterations
-- [ ] After `submit_button.click` in `login_to_priorbank`: use `with_retry` to wait for title == "Рабочий стол" instead of `sleep(2)` + one-shot title check
-- [ ] In `open_cards_page`: call `close_popups` before clicking menu items (already partially done), add `wait_for_idle` after each menu click instead of `sleep(0.3)`
-- [ ] Add `screenshot_on_failure(label)` public helper: saves to `Rails.root/tmp/priorbank-<label>-<timestamp>.png`; use it in `with_retry`'s rescue block on final failure
-- [ ] Update `BrowserSession#wait_for` to log a warning (not silent) when it times out without finding the selector
-- [ ] Run tests: `bin/rails test test/models/priorbank_account/` — must pass before Task 3
+- [x] Rewrite `close_popups` to check three selectors: `div.k-widget.k-window`, `div.modal`, `[role="dialog"]`; close all visible ones in a loop until none remain or max 5 iterations
+- [x] After `submit_button.click` in `login_to_priorbank`: use `with_retry` to wait for title == "Рабочий стол" instead of `sleep(2)` + one-shot title check
+- [x] In `open_cards_page`: call `close_popups` before clicking menu items (already partially done), add `wait_for_idle` after each menu click instead of `sleep(0.3)`
+- [x] Add `screenshot_on_failure(label)` public helper: saves to `Rails.root/tmp/priorbank-<label>-<timestamp>.png`; use it in `with_retry`'s rescue block on final failure
+- [x] Update `BrowserSession#wait_for` to log a warning (not silent) when it times out without finding the selector
+- [x] Run tests: `bin/rails test test/models/priorbank_account/` — must pass before Task 3
 
 ---
 
