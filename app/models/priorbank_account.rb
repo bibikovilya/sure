@@ -25,7 +25,7 @@ class PriorbankAccount < ApplicationRecord
       return last_completed_sync.window_end_date if last_completed_sync&.window_end_date.present?
 
       # Fall back to latest entry date
-      latest_entry_date = account&.entries&.maximum(:date)
+      latest_entry_date = account&.entries.maximum(:date)
       return latest_entry_date if latest_entry_date.present?
 
       # Default to 3 months ago

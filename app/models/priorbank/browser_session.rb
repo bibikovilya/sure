@@ -75,22 +75,20 @@ class Priorbank::BrowserSession
     end
 
     def with_retry(attempts: 3, base_delay: 1)
-      last_error = nil
       attempts.times do |attempt|
         begin
           return yield
         rescue => e
-          last_error = e
           delay = base_delay * (2**attempt)
           sync_update("retry", "Attempt #{attempt + 1}/#{attempts} failed: #{e.message}. Retrying in #{delay}s...")
           if attempt == attempts - 1
             screenshot_on_failure("retry-failure") if page
+            raise
           else
             sleep(delay)
           end
         end
       end
-      raise last_error
     end
 
     def sync_update(step, message, status = "in_progress")

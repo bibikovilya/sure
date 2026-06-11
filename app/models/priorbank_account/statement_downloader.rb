@@ -44,10 +44,6 @@ class PriorbankAccount::StatementDownloader
     session.quit if @owns_session
   end
 
-  def teardown
-    FileUtils.rm_rf(download_path) if download_path && Dir.exist?(download_path)
-  end
-
   private
 
     def page

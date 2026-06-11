@@ -6,14 +6,11 @@ class PriorbankItem::Syncer
   end
 
   def perform_sync(sync)
-    begin
-      fetched_accounts = fetch_accounts_from_priorbank(sync)
-      import_accounts(fetched_accounts, sync)
-
-      mark_completed(sync)
-    rescue => e
-      mark_failed(sync, e)
-    end
+    fetched_accounts = fetch_accounts_from_priorbank(sync)
+    import_accounts(fetched_accounts, sync)
+    mark_completed(sync)
+  rescue => e
+    mark_failed(sync, e)
   end
 
   def perform_post_sync
@@ -269,13 +266,13 @@ class PriorbankItem::Syncer
     end
 
     def mark_failed(sync, error)
-      if sync.respond_to?(:status) && sync.status.to_s == "completed"
+      if sync.status.to_s == "completed"
         Rails.logger.warn("PriorbankItem::Syncer#mark_failed called after completion: #{error.class} - #{error.message}")
         return
       end
 
       sync.fail!
-      sync.update!(error: error.message) if sync.respond_to?(:error)
+      sync.update!(error: error.message)
     end
 
     def sync_update(sync, step, message, status = "in_progress")

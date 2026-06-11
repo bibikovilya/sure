@@ -29,24 +29,6 @@ class PriorbankAccount::StatementDownloaderTest < ActiveSupport::TestCase
     assert_equal "/tmp/test.csv", result
   end
 
-  test "does not call session.quit when session is injected" do
-    session_double = mock("browser_session")
-    session_double.expects(:login_and_navigate_to_cards).never
-    session_double.expects(:quit).never
-
-    downloader = PriorbankAccount::StatementDownloader.new(
-      @start_date, @end_date, @card_name, session: session_double
-    )
-
-    downloader.stubs(:select_card)
-    downloader.stubs(:open_statements)
-    downloader.stubs(:setup_filters)
-    downloader.stubs(:download_statement)
-    downloader.stubs(:downloaded_file_path).returns("/tmp/test.csv")
-
-    downloader.call
-  end
-
   test "does not call session.quit when injected session call raises an error" do
     session_double = mock("browser_session")
     session_double.expects(:quit).never

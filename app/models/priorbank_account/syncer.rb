@@ -40,8 +40,6 @@ class PriorbankAccount::Syncer
       window_end = sync.window_end_date.presence || window[:end_date]
 
       sync.update!(window_start_date: window_start, window_end_date: window_end)
-      sync_data_update("window_start_date", window_start)
-      sync_data_update("window_end_date", window_end)
     end
 
     def sync_step_update(step, message, status = "in_progress")
