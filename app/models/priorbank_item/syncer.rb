@@ -75,14 +75,14 @@ class PriorbankItem::Syncer
           # Select this card
           checkbox.focus
           checkbox.click
-          sleep(0.3)
+          session.wait_for("ul.nav.nav-pills li.enabled a", wait: 3, step: 0.2)
 
           # Click on "Подробнее" link to open details
           details_link = page.css("ul.nav.nav-pills li.enabled a").find { |link| link.text.strip == "Подробнее" }
           raise "Details link not found" unless details_link
 
           details_link.click
-          sleep(0.5)
+          session.wait_for("div.product-details.card-details", wait: 5, step: 0.3)
 
           # Extract card details from the details page
           card_data = extract_card_details(session, sync)
@@ -95,18 +95,16 @@ class PriorbankItem::Syncer
           close_icon = page.at_css("li.k-item.k-state-active i.icon-kendo-tabstrip-close")
           if close_icon
             close_icon.click
-            sleep(0.3)
             session.wait_for("div.bank-cards-list", wait: 3, step: 0.3)
           end
         rescue => e
           Rails.logger.warn("[PriorbankItem::Syncer] Failed to extract card #{index + 1}: #{e.message}")
           sync_update(sync, "extraction", "Warning: Failed to extract card #{index + 1}: #{e.message}")
-          sleep(5.minutes)
 
           # Try to navigate back to cards list
           begin
             page.css("span.menu-item-parent").find { |menu| menu.text == "Карты" }.click
-            sleep(0.3)
+            session.wait_for("div.bank-cards-list", wait: 3, step: 0.3)
           rescue
             # If we can't go back, we might need to re-navigate
             Rails.logger.warn("[PriorbankItem::Syncer] Failed to navigate back to cards list")

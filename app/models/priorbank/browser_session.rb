@@ -1,12 +1,14 @@
 class Priorbank::BrowserSession
   LOGIN_PATH = "https://www.prior.by/web/"
+  BROWSER_TIMEOUT = 30
+  PROCESS_TIMEOUT = 60
 
   attr_reader :browser, :page, :sync, :login, :password
 
   def initialize(login:, password:, sync: nil, headless: true)
     @browser = Ferrum::Browser.new(
-      timeout: 30,
-      process_timeout: 60,
+      timeout: BROWSER_TIMEOUT,
+      process_timeout: PROCESS_TIMEOUT,
       headless: headless,
       browser_options: {
         "no-sandbox": nil,
@@ -58,6 +60,21 @@ class Priorbank::BrowserSession
 
   private
 
+    def with_retry(attempts: 3, base_delay: 1)
+      last_error = nil
+      attempts.times do |attempt|
+        begin
+          return yield
+        rescue => e
+          last_error = e
+          delay = base_delay * (2**attempt)
+          sync_update("retry", "Attempt #{attempt + 1}/#{attempts} failed: #{e.message}. Retrying in #{delay}s...")
+          sleep(delay) if attempt < attempts - 1
+        end
+      end
+      raise last_error
+    end
+
     def sync_update(step, message, status = "in_progress")
       return unless sync
 
@@ -69,7 +86,6 @@ class Priorbank::BrowserSession
       sync_update("login", "Logging into Priorbank...")
       page.go_to LOGIN_PATH
       page.network.wait_for_idle(timeout: 10)
-      sleep(1)
 
       sync_update("login", "Waiting for login form...")
       form = self.wait_for('//form[contains(@action, "Login")]', wait: 10, step: 0.5)
@@ -86,35 +102,31 @@ class Priorbank::BrowserSession
       raise "Submit button not found" unless submit_button
 
       sync_update("login", "Filling in credentials...")
-      sleep(0.5)
 
       login_input.focus
-      sleep(0.2)
+      sleep(0.05)
       login_input.type @login
-      sleep(0.2)
 
       login_value = page.evaluate("document.querySelector('input[name=\"UserName\"]').value")
       raise "Login field was not filled properly" if login_value.to_s.empty?
       sync_update("login", "Login field filled: #{login_value.length} characters")
 
       password_input.focus
-      sleep(0.2)
+      sleep(0.05)
       password_input.type @password
-      sleep(0.2)
 
       password_value = page.evaluate("document.querySelector('input[name=\"Password\"]').value")
       raise "Password field was not filled properly" if password_value.to_s.empty?
       sync_update("login", "Password field filled: #{password_value.length} characters")
 
       sync_update("login", "Submitting login form...")
-      sleep(0.5)
       submit_button.click
 
-      sleep(2)
-      page.network.wait_for_idle(timeout: 15)
-
-      current_title = page.current_title
-      raise "Failed to login to Priorbank. Current page: '#{current_title}'" if current_title != "Рабочий стол"
+      with_retry(attempts: 5, base_delay: 1) do
+        page.network.wait_for_idle(timeout: 15)
+        current_title = page.current_title
+        raise "Failed to login to Priorbank. Current page: '#{current_title}'" if current_title != "Рабочий стол"
+      end
 
       sync_update("login", "Successfully logged in", "success")
     end
@@ -137,8 +149,6 @@ class Priorbank::BrowserSession
         sleep(0.5)
       end
 
-      # Give an extra moment for JavaScript to settle
-      sleep(1)
       page.network.wait_for_idle(timeout: 5) rescue nil
 
       sync_update("wait_ready", "Page is ready", "success")
@@ -166,35 +176,20 @@ class Priorbank::BrowserSession
     end
 
     def open_cards_page
-      max_attempts = 10
-      attempts = 0
+      with_retry(attempts: 5, base_delay: 1) do
+        sync_update("navigation", "Navigating to cards page...")
 
-      loop do
-        attempts += 1
-        break if attempts > max_attempts
+        close_popups
 
-        begin
-          sync_update("navigation", "Navigating to cards page (attempt #{attempts})...")
+        page.css("span.menu-item-parent").find { |menu| menu.text == "Мои продукты" }.click
+        page.network.wait_for_idle(timeout: 5) rescue nil
+        page.css("span.menu-item-parent").find { |menu| menu.text == "Карты" }.click
 
-          close_popups
-          sleep(0.5)
+        self.wait_for("div.bank-cards-list", wait: 5, step: 0.5)
 
-          page.css("span.menu-item-parent").find { |menu| menu.text == "Мои продукты" }.click
-          sleep(0.3)
-          page.css("span.menu-item-parent").find { |menu| menu.text == "Карты" }.click
+        raise "Cards page did not load (title: '#{page.current_title}')" if page.current_title != "Платежные карточки"
 
-          self.wait_for("div.bank-cards-list", init: 1, wait: 5, step: 0.5)
-
-          if page.current_title == "Платежные карточки"
-            sync_update("navigation", "Cards page loaded", "success")
-            return
-          end
-        rescue => e
-          sync_update("navigation", "Attempt #{attempts} failed: #{e.message}")
-          sleep(1)
-          next if attempts < max_attempts
-          raise "Failed to open cards page after #{max_attempts} attempts: #{e.message}"
-        end
+        sync_update("navigation", "Cards page loaded", "success")
       end
     end
 end

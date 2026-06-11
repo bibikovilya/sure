@@ -94,15 +94,15 @@ Eliminate the `sleep(5.minutes)` blocker and all gratuitous fixed sleeps. Replac
 - Modify: `app/models/priorbank/browser_session.rb`
 - Modify: `app/models/priorbank_item/syncer.rb`
 
-- [ ] Add private `with_retry(attempts: 3, base_delay: 1, &block)` to `Priorbank::BrowserSession` that catches `StandardError`, sleeps `base_delay * 2**attempt` between retries, re-raises after final attempt
-- [ ] In `BrowserSession#login_to_priorbank`: replace `sleep(1)`, `sleep(2)`, `sleep(0.5)`, `sleep(0.2)` with `page.network.wait_for_idle(timeout:)` calls; keep only the field-focus micro-sleeps (≤0.1s) that are genuinely needed for CDP events
-- [ ] In `BrowserSession#open_cards_page`: replace the manual 10-attempt loop with `with_retry(attempts: 5, base_delay: 1)` wrapping the navigation block; remove `sleep(0.5)` and `sleep(0.3)` inside
-- [ ] In `BrowserSession#wait_for_page_ready`: replace `sleep(1)` at end with `page.network.wait_for_idle(timeout: 5) rescue nil`
-- [ ] In `PriorbankItem::Syncer#extract_card_data`: remove `sleep(5.minutes)` (line 104) — on card extraction failure, use `with_retry` retry logic or log + continue to next card without blocking
-- [ ] In `PriorbankItem::Syncer#extract_card_data`: replace `sleep(0.3)`, `sleep(0.5)` with `wait_for` calls on the next expected element
-- [ ] Move browser timeouts to named constants inside `Priorbank::BrowserSession`: `BROWSER_TIMEOUT = 30` and `PROCESS_TIMEOUT = 60`
-- [ ] Write tests for `with_retry`: verify it retries on error, waits between attempts, re-raises after max attempts, returns block value on success
-- [ ] Run tests: `bin/rails test test/models/priorbank_account/` — must pass before Task 2
+- [x] Add private `with_retry(attempts: 3, base_delay: 1, &block)` to `Priorbank::BrowserSession` that catches `StandardError`, sleeps `base_delay * 2**attempt` between retries, re-raises after final attempt
+- [x] In `BrowserSession#login_to_priorbank`: replace `sleep(1)`, `sleep(2)`, `sleep(0.5)`, `sleep(0.2)` with `page.network.wait_for_idle(timeout:)` calls; keep only the field-focus micro-sleeps (≤0.1s) that are genuinely needed for CDP events
+- [x] In `BrowserSession#open_cards_page`: replace the manual 10-attempt loop with `with_retry(attempts: 5, base_delay: 1)` wrapping the navigation block; remove `sleep(0.5)` and `sleep(0.3)` inside
+- [x] In `BrowserSession#wait_for_page_ready`: replace `sleep(1)` at end with `page.network.wait_for_idle(timeout: 5) rescue nil`
+- [x] In `PriorbankItem::Syncer#extract_card_data`: remove `sleep(5.minutes)` (line 104) — on card extraction failure, use `with_retry` retry logic or log + continue to next card without blocking
+- [x] In `PriorbankItem::Syncer#extract_card_data`: replace `sleep(0.3)`, `sleep(0.5)` with `wait_for` calls on the next expected element
+- [x] Move browser timeouts to named constants inside `Priorbank::BrowserSession`: `BROWSER_TIMEOUT = 30` and `PROCESS_TIMEOUT = 60`
+- [x] Write tests for `with_retry`: verify it retries on error, waits between attempts, re-raises after max attempts, returns block value on success
+- [x] Run tests: `bin/rails test test/models/priorbank_account/` — must pass before Task 2
 
 ---
 
