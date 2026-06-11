@@ -78,16 +78,21 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
     session_double = mock("browser_session")
     csv_path = "/tmp/priorbank_statements_xyz/statement.csv"
 
-    # First account raises, second succeeds
-    call_count = 0
-    PriorbankAccount::StatementDownloader.any_instance.stubs(:call) do
-      call_count += 1
-      if call_count == 1
-        raise StandardError, "Download failed"
-      else
-        csv_path
-      end
-    end
+    # Visa BYN (first account) fails; Visa USD (second account) succeeds.
+    # Use per-card mocks instead of any_instance — any_instance ignores blocks in Mocha.
+    failing_downloader = mock("failing_downloader")
+    failing_downloader.stubs(:call).raises(StandardError, "Download failed")
+
+    succeeding_downloader = mock("succeeding_downloader")
+    succeeding_downloader.stubs(:call).returns(csv_path)
+
+    PriorbankAccount::StatementDownloader.stubs(:new).with(
+      anything, anything, @priorbank_account.name, has_key(:session)
+    ).returns(failing_downloader)
+
+    PriorbankAccount::StatementDownloader.stubs(:new).with(
+      anything, anything, second_priorbank_account.name, has_key(:session)
+    ).returns(succeeding_downloader)
 
     # First account (Visa BYN) fails — second account (Visa USD) should still get a sync record
     assert_difference -> { Sync.where(status: "pending").count }, 1 do
