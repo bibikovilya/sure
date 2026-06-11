@@ -37,7 +37,7 @@ class PriorbankAccount::Syncer
     def calculate_and_save_window
       window = priorbank_account.sync_window
       window_start = sync.window_start_date.presence || window[:start_date]
-      window_end = sync.window_end_date || [ window_start + 3.months, Date.current ].min
+      window_end = sync.window_end_date.presence || window[:end_date]
 
       sync.update!(window_start_date: window_start, window_end_date: window_end)
       sync_data_update("window_start_date", window_start)

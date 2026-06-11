@@ -176,23 +176,25 @@ class PriorbankItem::Syncer
 
       linked_accounts.each do |account|
         window = account.sync_window
-        start_date = window[:start_date]
-        end_date = window[:end_date]
 
-        sync_update(item_sync, "download_statements", "Downloading statement for '#{account.name}' (#{start_date}–#{end_date})...")
+        sync_update(item_sync, "download_statements", "Downloading statement for '#{account.name}' (#{window[:start_date]}–#{window[:end_date]})...")
 
         begin
           downloader = PriorbankAccount::StatementDownloader.new(
-            start_date,
-            end_date,
+            window[:start_date],
+            window[:end_date],
             account.name,
             session: session,
             sync: item_sync
           )
           csv_path = downloader.call
+          downloader.teardown
 
+          account.syncs.where(status: :pending).find_each(&:mark_stale!)
           account.syncs.create!(
             status: :pending,
+            window_start_date: window[:start_date],
+            window_end_date: window[:end_date],
             data: { "csv_path" => csv_path }
           )
 

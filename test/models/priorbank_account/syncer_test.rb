@@ -414,7 +414,7 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
     assert_equal 0, @account.entries.count
 
     expected_start = Date.new(2024, 3, 31)
-    expected_end = expected_start + 3.months
+    expected_end = Date.current
 
     @syncer.perform_sync(@sync)
 

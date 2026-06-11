@@ -16,7 +16,7 @@ class Priorbank::BrowserSessionTest < ActiveSupport::TestCase
     end
 
     # Make private methods callable in tests
-    public :with_retry
+    public :with_retry, :screenshot_on_failure
   end
 
   setup do

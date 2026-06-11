@@ -87,10 +87,14 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
       end
     end
 
-    # Should still create a sync record for the second account
+    # First account (Visa BYN) fails — second account (Visa USD) should still get a sync record
     assert_difference -> { Sync.where(status: "pending").count }, 1 do
       @syncer.send(:download_statements, session_double, @item_sync)
     end
+
+    assert_equal 0, @priorbank_account.syncs.where(status: :pending).count, "failing account must have no pending sync"
+    assert_equal 1, second_priorbank_account.syncs.where(status: :pending).count, "succeeding account must have a pending sync"
+    assert_equal csv_path, second_priorbank_account.syncs.where(status: :pending).first.data["csv_path"]
   end
 
   test "download_statements only downloads for accounts with an account_provider (linked accounts)" do
@@ -194,5 +198,116 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
     assert_no_enqueued_jobs(only: SyncJob) do
       @syncer.perform_post_sync
     end
+  end
+
+  test "perform_post_sync enqueues only the newest pending sync when multiple exist" do
+    @priorbank_account.syncs.create!(
+      status: :pending,
+      data: { "csv_path" => "/tmp/statement_old.csv" }
+    )
+    newer_sync = @priorbank_account.syncs.create!(
+      status: :pending,
+      data: { "csv_path" => "/tmp/statement_new.csv" }
+    )
+
+    # Only one job should be enqueued (the newest pending sync)
+    assert_enqueued_jobs 1, only: SyncJob do
+      @syncer.perform_post_sync
+    end
+
+    assert_enqueued_with(job: SyncJob, args: [ newer_sync ]) do
+      clear_enqueued_jobs
+      @syncer.perform_post_sync
+    end
+  end
+
+  # ── download_statements: pending sync deduplication ────────────────────────
+
+  test "download_statements marks pre-existing pending syncs as stale before creating new one" do
+    stale_sync = @priorbank_account.syncs.create!(
+      status: :pending,
+      data: { "csv_path" => "/tmp/old.csv" }
+    )
+
+    session_double = mock("browser_session")
+    csv_path = "/tmp/priorbank_statements_abc/statement.csv"
+
+    downloader_mock = mock("statement_downloader")
+    downloader_mock.stubs(:call).returns(csv_path)
+    downloader_mock.stubs(:teardown)
+    PriorbankAccount::StatementDownloader.stubs(:new).returns(downloader_mock)
+
+    @syncer.send(:download_statements, session_double, @item_sync)
+
+    stale_sync.reload
+    assert_equal "stale", stale_sync.status, "pre-existing pending sync must be marked stale"
+
+    fresh_sync = @priorbank_account.syncs.where(status: :pending).order(created_at: :desc).first
+    assert_not_nil fresh_sync
+    assert_equal csv_path, fresh_sync.data["csv_path"]
+  end
+
+  test "download_statements stores window dates on the created sync record" do
+    session_double = mock("browser_session")
+    csv_path = "/tmp/priorbank_statements_abc/statement.csv"
+
+    downloader_mock = mock("statement_downloader")
+    downloader_mock.stubs(:call).returns(csv_path)
+    downloader_mock.stubs(:teardown)
+    PriorbankAccount::StatementDownloader.stubs(:new).returns(downloader_mock)
+
+    @syncer.send(:download_statements, session_double, @item_sync)
+
+    account_sync = @priorbank_account.syncs.where(status: :pending).order(created_at: :desc).first
+    window = @priorbank_account.sync_window
+    assert_equal window[:start_date], account_sync.window_start_date
+    assert_equal window[:end_date], account_sync.window_end_date
+  end
+
+  # ── perform_sync (public entry point) ─────────────────────────────────────
+
+  test "perform_sync calls fetch_accounts_from_priorbank and marks sync completed" do
+    @syncer.expects(:fetch_accounts_from_priorbank).with(@item_sync).returns([])
+    @syncer.expects(:import_accounts).with([], @item_sync)
+
+    @syncer.perform_sync(@item_sync)
+
+    @item_sync.reload
+    assert_equal "completed", @item_sync.status
+  end
+
+  test "perform_sync marks sync failed when an error is raised" do
+    @syncer.stubs(:fetch_accounts_from_priorbank).raises(StandardError, "browser crashed")
+
+    @syncer.perform_sync(@item_sync)
+
+    @item_sync.reload
+    assert_equal "failed", @item_sync.status
+    assert_includes @item_sync.error, "browser crashed"
+  end
+
+  test "fetch_accounts_from_priorbank calls download_statements before session quit" do
+    session_double = mock("browser_session")
+    session_double.stubs(:login_and_navigate_to_cards)
+    session_double.stubs(:quit)
+
+    Priorbank::BrowserSession.stubs(:new).returns(session_double)
+
+    download_called = false
+    quit_called = false
+
+    @syncer.stubs(:extract_card_data).returns([])
+    @syncer.stubs(:download_statements) do
+      raise "download_statements called after quit" if quit_called
+      download_called = true
+    end
+    session_double.stubs(:quit) { quit_called = true }
+
+    @syncer.stubs(:import_accounts)
+
+    @syncer.perform_sync(@item_sync)
+
+    assert download_called, "download_statements must be called"
+    assert quit_called, "session.quit must be called"
   end
 end

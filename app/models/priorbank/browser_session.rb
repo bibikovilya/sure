@@ -61,18 +61,18 @@ class Priorbank::BrowserSession
     node
   end
 
-  def screenshot_on_failure(label)
-    timestamp = Time.now.to_i
-    path = Rails.root.join("tmp", "priorbank-#{label}-#{timestamp}.png").to_s
-    page.screenshot(path: path, full: true)
-    Rails.logger.info "[Priorbank::BrowserSession] Screenshot saved: #{path}"
-    path
-  rescue => e
-    Rails.logger.warn "[Priorbank::BrowserSession] Failed to save screenshot for '#{label}': #{e.message}"
-    nil
-  end
-
   private
+
+    def screenshot_on_failure(label)
+      timestamp = Time.now.to_i
+      path = Rails.root.join("tmp", "priorbank-#{label}-#{timestamp}.png").to_s
+      page.screenshot(path: path, full: true)
+      Rails.logger.info "[Priorbank::BrowserSession] Screenshot saved: #{path}"
+      path
+    rescue => e
+      Rails.logger.warn "[Priorbank::BrowserSession] Failed to save screenshot for '#{label}': #{e.message}"
+      nil
+    end
 
     def with_retry(attempts: 3, base_delay: 1)
       last_error = nil
@@ -173,12 +173,7 @@ class Priorbank::BrowserSession
     end
 
     def close_popups
-      max_iterations = 5
-      iterations = 0
-
       loop do
-        break if iterations >= max_iterations
-
         closed_any = false
 
         POPUP_SELECTORS.each do |selector|
@@ -202,8 +197,6 @@ class Priorbank::BrowserSession
         end
 
         break unless closed_any
-
-        iterations += 1
       end
     end
 
