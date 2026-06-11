@@ -173,7 +173,12 @@ class Priorbank::BrowserSession
     end
 
     def close_popups
+      max_iterations = 10
+      iterations = 0
+
       loop do
+        break if iterations >= max_iterations
+        iterations += 1
         closed_any = false
 
         POPUP_SELECTORS.each do |selector|

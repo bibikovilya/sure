@@ -234,7 +234,6 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
 
     downloader_mock = mock("statement_downloader")
     downloader_mock.stubs(:call).returns(csv_path)
-    downloader_mock.stubs(:teardown)
     PriorbankAccount::StatementDownloader.stubs(:new).returns(downloader_mock)
 
     @syncer.send(:download_statements, session_double, @item_sync)
@@ -245,6 +244,7 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
     fresh_sync = @priorbank_account.syncs.where(status: :pending).order(created_at: :desc).first
     assert_not_nil fresh_sync
     assert_equal csv_path, fresh_sync.data["csv_path"]
+    assert_equal @item_sync.id, fresh_sync.parent_id, "account sync must be parented to item sync"
   end
 
   test "download_statements stores window dates on the created sync record" do
@@ -253,7 +253,6 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
 
     downloader_mock = mock("statement_downloader")
     downloader_mock.stubs(:call).returns(csv_path)
-    downloader_mock.stubs(:teardown)
     PriorbankAccount::StatementDownloader.stubs(:new).returns(downloader_mock)
 
     @syncer.send(:download_statements, session_double, @item_sync)

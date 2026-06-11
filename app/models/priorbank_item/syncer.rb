@@ -188,11 +188,11 @@ class PriorbankItem::Syncer
             sync: item_sync
           )
           csv_path = downloader.call
-          downloader.teardown
 
           account.syncs.where(status: :pending).find_each(&:mark_stale!)
           account.syncs.create!(
             status: :pending,
+            parent: item_sync,
             window_start_date: window[:start_date],
             window_end_date: window[:end_date],
             data: { "csv_path" => csv_path }
