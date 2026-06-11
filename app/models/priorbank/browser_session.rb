@@ -68,6 +68,15 @@ class Priorbank::BrowserSession
       path = Rails.root.join("tmp", "priorbank-#{label}-#{timestamp}.png").to_s
       page.screenshot(path: path, full: true)
       Rails.logger.info "[Priorbank::BrowserSession] Screenshot saved: #{path}"
+
+      if sync
+        sync.error_screenshot.attach(
+          io: File.open(path),
+          filename: "priorbank-#{label}-#{sync.id}-#{timestamp}.png",
+          content_type: "image/png"
+        )
+      end
+
       path
     rescue => e
       Rails.logger.warn "[Priorbank::BrowserSession] Failed to save screenshot for '#{label}': #{e.message}"

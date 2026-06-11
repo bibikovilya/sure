@@ -75,5 +75,8 @@ en:
       child_syncs:
         one: "Child Sync (%{count})"
         other: "Child Syncs (%{count})"
+      error_screenshot_section: "Error Screenshot"
+      download_screenshot: "Download screenshot"
+      data_section: "Sync Data"
       no_sync_data: "No sync data available for this connection."
       close: "Close"
