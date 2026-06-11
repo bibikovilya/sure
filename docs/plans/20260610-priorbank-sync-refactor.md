@@ -173,16 +173,16 @@ After account discovery, stay in the open browser session and download a CSV for
 **Files:**
 - Modify: `app/models/priorbank_item/syncer.rb`
 
-- [ ] Add private `download_statements(session, item_sync)` method that iterates `priorbank_item.priorbank_accounts.joins(:account_provider)` and for each:
+- [x] Add private `download_statements(session, item_sync)` method that iterates `priorbank_item.priorbank_accounts.joins(:account_provider)` and for each:
   - calls `account.sync_window` to get `{ start_date:, end_date: }`
   - creates `StatementDownloader.new(start_date, end_date, account.name, session: session, sync: item_sync)`
   - calls `.call` to get the CSV path
   - creates an account `Sync` record with `data: { csv_path: path }` (status: `:pending`) — do NOT enqueue the job yet; that's `perform_post_sync`'s job
-- [ ] Call `download_statements(session, sync)` inside `fetch_accounts_from_priorbank` AFTER `extract_card_data` and BEFORE `session.quit` in the `ensure` block — session must still be open
-- [ ] On per-account download failure: log warning + `sync_update` + continue to next account (do not abort the whole item sync)
-- [ ] Add per-account progress updates: `"Downloading statement for '#{account.name}' (#{start_date}–#{end_date})..."`
-- [ ] Write tests: stub `BrowserSession`, verify `StatementDownloader` receives the correct per-account start/end dates and the shared `session:`, verify account `Sync` record is created with `data["csv_path"]` set, verify one account's failure doesn't abort others
-- [ ] Run tests: `bin/rails test test/models/priorbank_account/` + `bin/rails test test/models/priorbank_item/` if exists — must pass before Task 7
+- [x] Call `download_statements(session, sync)` inside `fetch_accounts_from_priorbank` AFTER `extract_card_data` and BEFORE `session.quit` in the `ensure` block — session must still be open
+- [x] On per-account download failure: log warning + `sync_update` + continue to next account (do not abort the whole item sync)
+- [x] Add per-account progress updates: `"Downloading statement for '#{account.name}' (#{start_date}–#{end_date})..."`
+- [x] Write tests: stub `BrowserSession`, verify `StatementDownloader` receives the correct per-account start/end dates and the shared `session:`, verify account `Sync` record is created with `data["csv_path"]` set, verify one account's failure doesn't abort others
+- [x] Run tests: `bin/rails test test/models/priorbank_account/` + `bin/rails test test/models/priorbank_item/` if exists — must pass before Task 7
 
 ---
 

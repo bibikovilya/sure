@@ -39,6 +39,8 @@ class PriorbankItem::Syncer
         sync_update(sync, "extraction", "Extracting account information...")
         accounts = extract_card_data(session, sync)
         sync_update(sync, "extraction", "Successfully extracted #{accounts.count} accounts", "success")
+
+        download_statements(session, sync)
       rescue => e
         priorbank_item.update!(status: :requires_update)
         raise e
@@ -158,6 +160,39 @@ class PriorbankItem::Syncer
       balance_string.gsub(/\s+/, "").gsub(",", ".").to_f
     rescue
       nil
+    end
+
+    def download_statements(session, item_sync)
+      linked_accounts = priorbank_item.priorbank_accounts.joins(:account_provider)
+
+      linked_accounts.each do |account|
+        window = account.sync_window
+        start_date = window[:start_date]
+        end_date = window[:end_date]
+
+        sync_update(item_sync, "download_statements", "Downloading statement for '#{account.name}' (#{start_date}–#{end_date})...")
+
+        begin
+          downloader = PriorbankAccount::StatementDownloader.new(
+            start_date,
+            end_date,
+            account.name,
+            session: session,
+            sync: item_sync
+          )
+          csv_path = downloader.call
+
+          account.syncs.create!(
+            status: :pending,
+            data: { "csv_path" => csv_path }
+          )
+
+          sync_update(item_sync, "download_statements", "Statement downloaded for '#{account.name}'", "success")
+        rescue => e
+          Rails.logger.warn("[PriorbankItem::Syncer] Failed to download statement for '#{account.name}': #{e.message}")
+          sync_update(item_sync, "download_statements", "Warning: Failed to download statement for '#{account.name}': #{e.message}")
+        end
+      end
     end
 
     def import_accounts(fetched_accounts, sync)
