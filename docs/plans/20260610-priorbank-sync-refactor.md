@@ -128,9 +128,9 @@ The CSV path is stored in `sync.data["csv_path"]` on the account's `Sync` record
 
 **Files:** none
 
-- [ ] Confirm that `Sync#data` is a JSONB column (check schema): `grep -A5 "create_table.*syncs" db/schema.rb`
-- [ ] Confirm that `sync.data = sync.data.merge(csv_path: path)` + `sync.save!` round-trips correctly (no unexpected serialization)
-- [ ] No migration to run — proceed to Task 4
+- [x] Confirm that `Sync#data` is a JSONB column (check schema): `grep -A5 "create_table.*syncs" db/schema.rb`
+- [x] Confirm that `sync.data = sync.data.merge(csv_path: path)` + `sync.save!` round-trips correctly (no unexpected serialization)
+- [x] No migration to run — proceed to Task 4
 
 ---
 
