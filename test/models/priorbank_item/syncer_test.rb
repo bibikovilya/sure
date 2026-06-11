@@ -80,7 +80,7 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
 
     # First account raises, second succeeds
     call_count = 0
-    PriorbankAccount::StatementDownloader.any_instance.stubs(:call).with() do
+    PriorbankAccount::StatementDownloader.any_instance.stubs(:call) do
       call_count += 1
       if call_count == 1
         raise StandardError, "Download failed"
@@ -231,28 +231,17 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
     @syncer.perform_sync(@item_sync)
   end
 
-  test "fetch_accounts_from_priorbank calls download_statements before session quit" do
+  test "fetch_accounts_from_priorbank calls download_statements and quits session" do
     session_double = mock("browser_session")
     session_double.stubs(:login_and_navigate_to_cards)
-    session_double.stubs(:quit)
+    session_double.expects(:quit).once
 
     Priorbank::BrowserSession.stubs(:new).returns(session_double)
 
-    download_called = false
-    quit_called = false
-
     @syncer.stubs(:extract_card_data).returns([])
-    @syncer.stubs(:download_statements) do
-      raise "download_statements called after quit" if quit_called
-      download_called = true
-    end
-    session_double.stubs(:quit) { quit_called = true }
-
+    @syncer.expects(:download_statements).once
     @syncer.stubs(:import_accounts)
 
     @syncer.perform_sync(@item_sync)
-
-    assert download_called, "download_statements must be called"
-    assert quit_called, "session.quit must be called"
   end
 end

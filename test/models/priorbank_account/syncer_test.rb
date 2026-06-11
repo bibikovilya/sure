@@ -262,15 +262,13 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
     assert @sync.data["fixed_csv_data"].present?
   end
 
-  test "stores window_start_date and window_end_date in sync.data" do
+  test "stores window_start_date and window_end_date in sync columns" do
     @syncer.perform_sync(@sync)
 
     @sync.reload
-    assert @sync.data["window_start_date"].present?
-    assert @sync.data["window_end_date"].present?
-    assert Date.parse(@sync.data["window_start_date"]).is_a?(Date)
-    assert Date.parse(@sync.data["window_end_date"]).is_a?(Date)
-    assert Date.parse(@sync.data["window_end_date"]) >= Date.parse(@sync.data["window_start_date"])
+    assert @sync.window_start_date.present?
+    assert @sync.window_end_date.present?
+    assert @sync.window_end_date >= @sync.window_start_date
   end
 
   test "stores account_details in sync.data" do
