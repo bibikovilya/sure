@@ -1,6 +1,7 @@
 require "test_helper"
 
 class PriorbankItem::SyncerTest < ActiveSupport::TestCase
+  include ActiveJob::TestHelper
   setup do
     @account = accounts(:depository_byn)
     @priorbank_item = PriorbankItem.create!(
@@ -145,5 +146,53 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
 
     download_messages = @item_sync.data["steps"].select { |s| s["step"] == "download_statements" }
     assert download_messages.any? { |s| s["message"].include?("Visa BYN") }
+  end
+
+  # ── perform_post_sync ──────────────────────────────────────────────────────
+
+  test "perform_post_sync enqueues SyncJob for pending sync records with csv_path" do
+    csv_path = "/tmp/priorbank_statements_abc/statement.csv"
+    account_sync = @priorbank_account.syncs.create!(
+      status: :pending,
+      data: { "csv_path" => csv_path }
+    )
+
+    assert_enqueued_with(job: SyncJob, args: [ account_sync ]) do
+      @syncer.perform_post_sync
+    end
+  end
+
+  test "perform_post_sync skips accounts without a pending sync with csv_path" do
+    # No sync records created for @priorbank_account
+    assert_no_enqueued_jobs(only: SyncJob) do
+      @syncer.perform_post_sync
+    end
+  end
+
+  test "perform_post_sync skips pending syncs that have no csv_path in data" do
+    # Pending sync but no csv_path in data
+    @priorbank_account.syncs.create!(status: :pending, data: { "steps" => [] })
+
+    assert_no_enqueued_jobs(only: SyncJob) do
+      @syncer.perform_post_sync
+    end
+  end
+
+  test "perform_post_sync skips accounts not linked to an app account" do
+    unlinked_priorbank_account = PriorbankAccount.create!(
+      account_type: "Дебетовая карта",
+      priorbank_item: @priorbank_item,
+      name: "Unlinked Card",
+      currency: "BYN"
+    )
+    # Create a pending sync with csv_path for the unlinked account
+    unlinked_priorbank_account.syncs.create!(
+      status: :pending,
+      data: { "csv_path" => "/tmp/some.csv" }
+    )
+
+    assert_no_enqueued_jobs(only: SyncJob) do
+      @syncer.perform_post_sync
+    end
   end
 end

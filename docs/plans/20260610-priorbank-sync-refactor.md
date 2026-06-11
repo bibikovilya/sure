@@ -211,12 +211,12 @@ Currently `Family::Syncer` maps priorbank items → individual accounts (`map(&:
 - Modify: `app/models/family/syncer.rb`
 - Modify: `app/models/priorbank_item/syncer.rb`
 
-- [ ] In `Family::Syncer#child_syncables`: replace `family.priorbank_items.active.map(&:linked_priorbank_accounts).flatten` with `family.priorbank_items.active` so item syncs are scheduled (not individual account syncs)
-- [ ] Implement `PriorbankItem::Syncer#perform_post_sync`: find each account's pending `Sync` record (status `:pending` with `data["csv_path"]` present), enqueue `SyncJob.perform_later(sync.id)` for each — do NOT create new sync records here, they were already created in `download_statements`
-- [ ] Ensure idempotency: skip accounts whose pending sync record doesn't have `data["csv_path"]` or is already running/completed
-- [ ] Write test for `Family::Syncer#child_syncables`: verify priorbank items (not accounts) are included
-- [ ] Write test for `PriorbankItem::Syncer#perform_post_sync`: verify `SyncJob` is enqueued for pending sync records with csv_path, skipped for accounts without pending csv syncs
-- [ ] Run tests: `bin/rails test` — must pass before Task 9
+- [x] In `Family::Syncer#child_syncables`: replace `family.priorbank_items.active.map(&:linked_priorbank_accounts).flatten` with `family.priorbank_items.active` so item syncs are scheduled (not individual account syncs)
+- [x] Implement `PriorbankItem::Syncer#perform_post_sync`: find each account's pending `Sync` record (status `:pending` with `data["csv_path"]` present), enqueue `SyncJob.perform_later(sync.id)` for each — do NOT create new sync records here, they were already created in `download_statements`
+- [x] Ensure idempotency: skip accounts whose pending sync record doesn't have `data["csv_path"]` or is already running/completed
+- [x] Write test for `Family::Syncer#child_syncables`: verify priorbank items (not accounts) are included
+- [x] Write test for `PriorbankItem::Syncer#perform_post_sync`: verify `SyncJob` is enqueued for pending sync records with csv_path, skipped for accounts without pending csv syncs
+- [x] Run tests: `bin/rails test` — must pass before Task 9
 
 ---
 

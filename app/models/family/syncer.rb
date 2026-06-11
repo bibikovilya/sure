@@ -30,7 +30,7 @@ class Family::Syncer
         family.simplefin_items.active +
         family.lunchflow_items.active +
         family.enable_banking_items.active +
-        family.priorbank_items.active.map(&:linked_priorbank_accounts).flatten +
+        family.priorbank_items.active.to_a +
         family.accounts.manual
     end
 end

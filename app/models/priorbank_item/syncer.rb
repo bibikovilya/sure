@@ -17,7 +17,16 @@ class PriorbankItem::Syncer
   end
 
   def perform_post_sync
-    # no-op
+    priorbank_item.priorbank_accounts.joins(:account_provider).each do |account|
+      pending_sync = account.syncs
+                            .where(status: :pending)
+                            .order(created_at: :desc)
+                            .first
+
+      next unless pending_sync&.data&.dig("csv_path").present?
+
+      SyncJob.perform_later(pending_sync)
+    end
   end
 
   private
