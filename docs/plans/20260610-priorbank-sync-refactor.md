@@ -193,13 +193,13 @@ Replace the `StatementDownloader` call (which created its own browser) with a di
 **Files:**
 - Modify: `app/models/priorbank_account/syncer.rb`
 
-- [ ] Replace `fetch_transactions` implementation: read `sync.data["csv_path"]`, raise a descriptive error if nil or file doesn't exist on disk (`"No statement CSV found in sync data — run a full Priorbank item sync first"`)
-- [ ] Remove `downloader.teardown` call (no longer owns a download path or browser)
-- [ ] Remove the `StatementDownloader` instantiation and `login:`, `password:` args entirely
-- [ ] CSV file is NOT deleted after parsing — kept on disk for historical reference
-- [ ] Update `syncer_test.rb`: remove all stubs for `StatementDownloader` and `BrowserSession`; instead build a `Sync` record with `data: { "csv_path" => fixture_csv_path }` before calling `perform_sync`
-- [ ] Write test for missing `csv_path` in sync data: verify `perform_sync` raises a clear error and marks sync as failed
-- [ ] Run tests: `bin/rails test test/models/priorbank_account/syncer_test.rb` — must pass before Task 8
+- [x] Replace `fetch_transactions` implementation: read `sync.data["csv_path"]`, raise a descriptive error if nil or file doesn't exist on disk (`"No statement CSV found in sync data — run a full Priorbank item sync first"`)
+- [x] Remove `downloader.teardown` call (no longer owns a download path or browser)
+- [x] Remove the `StatementDownloader` instantiation and `login:`, `password:` args entirely
+- [x] CSV file is NOT deleted after parsing — kept on disk for historical reference
+- [x] Update `syncer_test.rb`: remove all stubs for `StatementDownloader` and `BrowserSession`; instead build a `Sync` record with `data: { "csv_path" => fixture_csv_path }` before calling `perform_sync`
+- [x] Write test for missing `csv_path` in sync data: verify `perform_sync` raises a clear error and marks sync as failed
+- [x] Run tests: `bin/rails test test/models/priorbank_account/syncer_test.rb` — must pass before Task 8
 
 ---
 

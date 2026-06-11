@@ -56,25 +56,19 @@ class PriorbankAccount::Syncer
     end
 
     def fetch_transactions
-      sync_step_update("fetch_transactions", "Fetching transactions from #{sync.window_start_date.strftime('%d.%m.%Y')} to #{sync.window_end_date.strftime('%d.%m.%Y')}...")
+      sync_step_update("fetch_transactions", "Reading statement CSV from sync data...")
 
-      downloader = PriorbankAccount::StatementDownloader.new(
-        sync.window_start_date,
-        sync.window_end_date,
-        priorbank_account.name,
-        headless: true,
-        sync: sync,
-        login: priorbank_account.login,
-        password: priorbank_account.password
-      )
-      csv_file_path = downloader.call
+      csv_file_path = sync.data&.dig("csv_path")
+
+      if csv_file_path.blank? || !File.exist?(csv_file_path)
+        raise "No statement CSV found in sync data — run a full Priorbank item sync first"
+      end
 
       sync_step_update("fetch_transactions", "Fixing the downloaded file encoding #{csv_file_path}...")
       fixed_csv_data = Utils::CsvEncodingFixer.convert_file(csv_file_path)
       sync_step_update("fetch_transactions", "Downloaded file encoding fixed", "success")
       sync_data_update("fixed_csv_data", fixed_csv_data)
 
-      downloader.teardown
       fixed_csv_data
     rescue => e
       sync_step_update("fetch_transactions", "Error fetching transactions: #{e.message}", "error")
