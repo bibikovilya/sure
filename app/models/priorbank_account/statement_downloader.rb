@@ -198,20 +198,19 @@ class PriorbankAccount::StatementDownloader
     def capture_error_screenshot(error)
       return unless sync
 
+      # Save to tmp only — do not attach to sync.error_screenshot here.
+      # StatementDownloader doesn't know whether its caller will propagate or
+      # catch this error, so it cannot guarantee the sync is actually failing.
+      # BrowserSession#screenshot_on_failure (called only on terminal session
+      # failures) is responsible for attaching screenshots to the sync record.
       sync_tmp_dir = Rails.root.join("tmp", "sync", sync.id.to_s)
       FileUtils.mkdir_p(sync_tmp_dir)
 
       screenshot_path = sync_tmp_dir.join("error_screenshot_#{Time.now.to_i}.png").to_s
       session.page.screenshot(path: screenshot_path, full: true)
 
-      sync.error_screenshot.attach(
-        io: File.open(screenshot_path),
-        filename: "error_screenshot_#{sync.id}_#{Time.now.to_i}.png",
-        content_type: "image/png"
-      )
-
-      Rails.logger.info "[PriorbankAccount::StatementDownloader] Error screenshot attached to sync #{sync.id}"
+      Rails.logger.info "[PriorbankAccount::StatementDownloader] Error screenshot saved: #{screenshot_path}"
     rescue => screenshot_error
-      Rails.logger.error "[PriorbankAccount::StatementDownloader] Failed to attach screenshot: #{screenshot_error.message}"
+      Rails.logger.error "[PriorbankAccount::StatementDownloader] Failed to save screenshot: #{screenshot_error.message}"
     end
 end
