@@ -2,26 +2,32 @@ class PriorbankAccount::StatementDownloader
   attr_reader :session, :download_path, :sync
   attr_accessor :start_date, :end_date, :card_name
 
-  def initialize(start_date, end_date, card_name, headless: true, sync: nil, login: nil, password: nil)
+  def initialize(start_date, end_date, card_name, headless: true, sync: nil, login: nil, password: nil, session: nil)
     @start_date = start_date
     @end_date = end_date
     @card_name = card_name
     @download_path = Dir.mktmpdir("priorbank_statements_")
     @sync = sync
 
-    login_creds = login || Setting.priorbank_login
-    password_creds = password || Setting.priorbank_password
-    @session = Priorbank::BrowserSession.new(
-      login: login_creds,
-      password: password_creds,
-      sync: sync,
-      headless: headless
-    )
+    if session
+      @session = session
+      @owns_session = false
+    else
+      login_creds = login || Setting.priorbank_login
+      password_creds = password || Setting.priorbank_password
+      @session = Priorbank::BrowserSession.new(
+        login: login_creds,
+        password: password_creds,
+        sync: sync,
+        headless: headless
+      )
+      @owns_session = true
+    end
   end
 
   def call
     sync_update("statement_downloader", "Starting statement download...")
-    session.login_and_navigate_to_cards
+    session.login_and_navigate_to_cards if @owns_session
     select_card
     open_statements
     setup_filters
@@ -35,7 +41,7 @@ class PriorbankAccount::StatementDownloader
     sync_update("statement_downloader", "Failed to download statement: #{e.message}", "error")
     raise e
   ensure
-    session.quit
+    session.quit if @owns_session
   end
 
   def teardown

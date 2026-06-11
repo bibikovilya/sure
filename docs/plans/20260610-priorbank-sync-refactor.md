@@ -141,13 +141,13 @@ Decouple CSV download logic from browser session management so it can participat
 **Files:**
 - Modify: `app/models/priorbank_account/statement_downloader.rb`
 
-- [ ] Add `session:` keyword argument to `initialize`; when provided, skip `BrowserSession.new` and use the passed session instead
-- [ ] Extract `owns_session` boolean flag: `true` when session was self-created (backward-compat path), `false` when injected
-- [ ] In `call`: skip `session.login_and_navigate_to_cards` when `owns_session == false` (caller already navigated)
-- [ ] In `ensure` block of `call` (and `teardown`): only call `session.quit` when `owns_session == true`
-- [ ] Verify backward-compat: calling `StatementDownloader.new(...)` without `session:` still works end-to-end (same as before)
-- [ ] Write tests for the injected-session path: stub a session double, verify `login_and_navigate_to_cards` is NOT called, verify `session.quit` is NOT called
-- [ ] Run tests: `bin/rails test test/models/priorbank_account/` — must pass before Task 5
+- [x] Add `session:` keyword argument to `initialize`; when provided, skip `BrowserSession.new` and use the passed session instead
+- [x] Extract `owns_session` boolean flag: `true` when session was self-created (backward-compat path), `false` when injected
+- [x] In `call`: skip `session.login_and_navigate_to_cards` when `owns_session == false` (caller already navigated)
+- [x] In `ensure` block of `call` (and `teardown`): only call `session.quit` when `owns_session == true`
+- [x] Verify backward-compat: calling `StatementDownloader.new(...)` without `session:` still works end-to-end (same as before)
+- [x] Write tests for the injected-session path: stub a session double, verify `login_and_navigate_to_cards` is NOT called, verify `session.quit` is NOT called
+- [x] Run tests: `bin/rails test test/models/priorbank_account/` — must pass before Task 5
 
 ---
 
