@@ -23,6 +23,7 @@ class PriorbankItem::Syncer
     def fetch_accounts_from_priorbank(sync)
       session = nil
       accounts = []
+      login_succeeded = false
 
       begin
         sync_update(sync, "browser_init", "Initializing browser...")
@@ -32,7 +33,9 @@ class PriorbankItem::Syncer
           sync: sync,
           headless: true
         )
-        session.login_and_navigate_to_cards
+        session.login
+        login_succeeded = true
+        session.open_cards_page
 
         sync_update(sync, "extraction", "Extracting account information...")
         accounts = extract_card_data(session, sync)
@@ -41,7 +44,9 @@ class PriorbankItem::Syncer
         download_statements(session, sync)
         priorbank_item.update!(status: :good)
       rescue => e
-        priorbank_item.update!(status: :requires_update)
+        # Only flag re-authentication when login itself fails; extraction or download
+        # errors do not mean credentials are invalid.
+        priorbank_item.update!(status: :requires_update) unless login_succeeded
         raise e
       ensure
         session&.quit
@@ -170,6 +175,8 @@ class PriorbankItem::Syncer
       linked_accounts.each do |account|
         window = account.sync_window
         sync_update(item_sync, "download_statements", "Downloading statement for '#{account.name}' (#{window[:start_date]}–#{window[:end_date]})...")
+
+        session.open_cards_page
 
         downloader = PriorbankAccount::StatementDownloader.new(
           window[:start_date],

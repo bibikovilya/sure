@@ -24,7 +24,10 @@ class Priorbank::BrowserSession
     @password = password
   end
 
-  def login_and_navigate_to_cards
+  # Authenticates the browser session. Raises on credential failure.
+  # Call this separately from open_cards_page so callers can distinguish
+  # auth failures (requires re-authentication) from navigation failures.
+  def login
     login_to_priorbank
 
     sync_update("wait_ready", "Waiting for page to be fully loaded...")
@@ -32,8 +35,10 @@ class Priorbank::BrowserSession
 
     sync_update("popup", "Closing popups...")
     close_popups
+  end
 
-    sync_update("navigation", "Opening cards page...")
+  def login_and_navigate_to_cards
+    login
     open_cards_page
   end
 
@@ -61,7 +66,45 @@ class Priorbank::BrowserSession
     node
   end
 
+  def open_cards_page
+    with_retry(attempts: 5, base_delay: 1) do
+      sync_update("navigation", "Navigating to cards page...")
+
+      close_popups
+
+      unless menu_item_visible?("Карты")
+        page.css("span.menu-item-parent").find { |m| m.text == "Мои продукты" }.click
+        page.network.wait_for_idle(timeout: 5) rescue nil
+      end
+
+      page.css("span.menu-item-parent").find { |m| m.text == "Карты" }.click
+      page.network.wait_for_idle(timeout: 5) rescue nil
+
+      self.wait_for("div.bank-cards-list", wait: 5, step: 0.5)
+
+      raise "Cards page did not load (title: '#{page.current_title}')" if page.current_title != "Платежные карточки"
+
+      sync_update("navigation", "Cards page loaded", "success")
+    end
+  end
+
   private
+
+    # Ferrum has no built-in visible? — offsetParent is null for elements hidden
+    # by display:none on themselves or any ancestor.
+    def menu_item_visible?(text)
+      page.evaluate(<<~JS)
+        (function() {
+          var spans = document.querySelectorAll('span.menu-item-parent');
+          for (var i = 0; i < spans.length; i++) {
+            if (spans[i].textContent.trim() === '#{text}') {
+              return spans[i].offsetParent !== null;
+            }
+          }
+          return false;
+        })()
+      JS
+    end
 
     def screenshot_on_failure(label)
       timestamp = Time.now.to_i
@@ -225,22 +268,4 @@ class Priorbank::BrowserSession
       end
     end
 
-    def open_cards_page
-      with_retry(attempts: 5, base_delay: 1) do
-        sync_update("navigation", "Navigating to cards page...")
-
-        close_popups
-
-        page.css("span.menu-item-parent").find { |menu| menu.text == "Мои продукты" }.click
-        page.network.wait_for_idle(timeout: 5) rescue nil
-        page.css("span.menu-item-parent").find { |menu| menu.text == "Карты" }.click
-        page.network.wait_for_idle(timeout: 5) rescue nil
-
-        self.wait_for("div.bank-cards-list", wait: 5, step: 0.5)
-
-        raise "Cards page did not load (title: '#{page.current_title}')" if page.current_title != "Платежные карточки"
-
-        sync_update("navigation", "Cards page loaded", "success")
-      end
-    end
 end

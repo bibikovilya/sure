@@ -28,6 +28,7 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
 
   test "download_statements calls StatementDownloader with per-account sync window and shared session" do
     session_double = mock("browser_session")
+    session_double.stubs(:open_cards_page)
     window = @priorbank_account.sync_window
 
     downloader_mock = mock("statement_downloader")
@@ -45,6 +46,7 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
 
   test "download_statements creates a pending Sync record with csv_path for each linked account and enqueues SyncJob" do
     session_double = mock("browser_session")
+    session_double.stubs(:open_cards_page)
     csv_path = "/tmp/priorbank_statements_abc/statement.csv"
 
     downloader_mock = mock("statement_downloader")
@@ -73,6 +75,7 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
     AccountProvider.create!(account: second_account, provider: second_priorbank_account)
 
     session_double = mock("browser_session")
+    session_double.stubs(:open_cards_page)
 
     failing_downloader = mock("failing_downloader")
     failing_downloader.stubs(:call).raises(StandardError, "Download failed")
@@ -100,6 +103,7 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
     AccountProvider.create!(account: second_account, provider: second_priorbank_account)
 
     session_double = mock("browser_session")
+    session_double.stubs(:open_cards_page)
 
     # First account fails — second never gets a chance to download
     failing_downloader = mock("failing_downloader")
@@ -127,6 +131,7 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
     )
 
     session_double = mock("browser_session")
+    session_double.stubs(:open_cards_page)
     csv_path = "/tmp/priorbank_statements_abc/statement.csv"
 
     downloader_mock = mock("statement_downloader")
@@ -143,6 +148,7 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
 
   test "download_statements records progress update for each account" do
     session_double = mock("browser_session")
+    session_double.stubs(:open_cards_page)
     csv_path = "/tmp/statement.csv"
 
     downloader_mock = mock("statement_downloader")
@@ -183,6 +189,7 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
     )
 
     session_double = mock("browser_session")
+    session_double.stubs(:open_cards_page)
     csv_path = "/tmp/priorbank_statements_abc/statement.csv"
 
     downloader_mock = mock("statement_downloader")
@@ -202,6 +209,7 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
 
   test "download_statements stores window dates on the created sync record" do
     session_double = mock("browser_session")
+    session_double.stubs(:open_cards_page)
     csv_path = "/tmp/priorbank_statements_abc/statement.csv"
 
     downloader_mock = mock("statement_downloader")
@@ -240,7 +248,8 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
     @item_sync.start!
 
     session_double = mock("browser_session")
-    session_double.stubs(:login_and_navigate_to_cards)
+    session_double.stubs(:login)
+    session_double.stubs(:open_cards_page)
     session_double.expects(:quit).once
 
     Priorbank::BrowserSession.stubs(:new).returns(session_double)
@@ -250,5 +259,31 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
     @syncer.stubs(:import_accounts)
 
     @syncer.perform_sync(@item_sync)
+  end
+
+  test "fetch_accounts_from_priorbank sets requires_update when login fails" do
+    session_double = mock("browser_session")
+    session_double.stubs(:login).raises(StandardError, "auth failed")
+    session_double.stubs(:quit)
+    Priorbank::BrowserSession.stubs(:new).returns(session_double)
+
+    assert_raises(StandardError) { @syncer.send(:fetch_accounts_from_priorbank, @item_sync) }
+
+    assert_equal "requires_update", @priorbank_item.reload.status
+  end
+
+  test "fetch_accounts_from_priorbank does not set requires_update when login succeeds but download fails" do
+    session_double = mock("browser_session")
+    session_double.stubs(:login)
+    session_double.stubs(:open_cards_page)
+    session_double.stubs(:quit)
+    Priorbank::BrowserSession.stubs(:new).returns(session_double)
+
+    @syncer.stubs(:extract_card_data).returns([])
+    @syncer.stubs(:download_statements).raises(StandardError, "CSV download timeout")
+
+    assert_raises(StandardError) { @syncer.send(:fetch_accounts_from_priorbank, @item_sync) }
+
+    assert_equal "good", @priorbank_item.reload.status
   end
 end
