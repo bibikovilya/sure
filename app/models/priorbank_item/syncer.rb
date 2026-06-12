@@ -9,7 +9,6 @@ class PriorbankItem::Syncer
     fetched_accounts = fetch_accounts_from_priorbank(sync)
     import_accounts(fetched_accounts, sync)
     sync.complete!
-    sync.parent&.finalize_if_all_children_finalized
   rescue => e
     mark_failed(sync, e)
   end

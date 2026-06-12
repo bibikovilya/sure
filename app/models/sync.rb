@@ -110,16 +110,15 @@ class Sync < ApplicationRecord
       return unless all_children_finalized?
 
       if syncing?
-        has_failed_children? ? fail! : complete!
-        perform_post_sync
-      elsif failed?
-        # Already failed before children existed; still run post-sync so
-        # broadcasts fire when children eventually finish.
-        perform_post_sync
+        if has_failed_children?
+          fail!
+        else
+          complete!
+        end
       end
-      # Already completed (syncable called complete! directly in perform_sync):
-      # skip post-sync to avoid re-broadcasting. Parent propagation below
-      # still notifies ancestors.
+
+      # If we make it here, the sync is finalized.  Run post-sync, regardless of failure/success.
+      perform_post_sync
     end
 
     # If this sync has a parent, try to finalize it so the child status propagates up the chain.
