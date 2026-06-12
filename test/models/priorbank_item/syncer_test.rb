@@ -59,6 +59,7 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
 
     account_sync = @priorbank_account.syncs.where(status: "pending").order(created_at: :desc).first
     assert_equal csv_path, account_sync.data["csv_path"]
+    assert_equal @item_sync.id, account_sync.parent_id, "account sync must be a child of the item sync"
   end
 
   test "download_statements raises and creates no account syncs when any download fails" do
