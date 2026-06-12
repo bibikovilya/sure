@@ -8,8 +8,8 @@ class PriorbankItem::Syncer
   def perform_sync(sync)
     fetched_accounts = fetch_accounts_from_priorbank(sync)
     import_accounts(fetched_accounts, sync)
-    # Do not call complete! here. The Sync model completes the item sync once all
-    # account child syncs finish (via finalize_if_all_children_finalized).
+    sync.complete!
+    sync.parent&.finalize_if_all_children_finalized
   rescue => e
     mark_failed(sync, e)
   end
@@ -165,36 +165,36 @@ class PriorbankItem::Syncer
     def download_statements(session, item_sync)
       linked_accounts = priorbank_item.priorbank_accounts.joins(:account_provider)
 
+      # Phase 1: download all CSVs — fail-fast on first error so no account
+      # syncs are enqueued unless every download succeeds.
+      downloads = {}
       linked_accounts.each do |account|
         window = account.sync_window
-
         sync_update(item_sync, "download_statements", "Downloading statement for '#{account.name}' (#{window[:start_date]}–#{window[:end_date]})...")
 
-        begin
-          downloader = PriorbankAccount::StatementDownloader.new(
-            window[:start_date],
-            window[:end_date],
-            account.name,
-            session: session,
-            sync: item_sync
-          )
-          csv_path = downloader.call
+        downloader = PriorbankAccount::StatementDownloader.new(
+          window[:start_date],
+          window[:end_date],
+          account.name,
+          session: session,
+          sync: item_sync
+        )
+        downloads[account] = { csv_path: downloader.call, window: window }
 
-          account.syncs.where(status: :pending).find_each(&:mark_stale!)
-          account_sync = account.syncs.create!(
-            status: :pending,
-            parent: item_sync,
-            window_start_date: window[:start_date],
-            window_end_date: window[:end_date],
-            data: { "csv_path" => csv_path }
-          )
-          SyncJob.perform_later(account_sync)
+        sync_update(item_sync, "download_statements", "Statement downloaded for '#{account.name}'", "success")
+      end
 
-          sync_update(item_sync, "download_statements", "Statement downloaded for '#{account.name}'", "success")
-        rescue => e
-          Rails.logger.warn("[PriorbankItem::Syncer] Failed to download statement for '#{account.name}': #{e.message}")
-          sync_update(item_sync, "download_statements", "Warning: Failed to download statement for '#{account.name}': #{e.message}")
-        end
+      # Phase 2: all downloads succeeded — atomically enqueue account syncs.
+      downloads.each do |account, result|
+        account.syncs.where(status: :pending).find_each(&:mark_stale!)
+        account_sync = account.syncs.create!(
+          status: :pending,
+          parent: item_sync,
+          window_start_date: result[:window][:start_date],
+          window_end_date: result[:window][:end_date],
+          data: { "csv_path" => result[:csv_path] }
+        )
+        SyncJob.perform_later(account_sync)
       end
     end
 

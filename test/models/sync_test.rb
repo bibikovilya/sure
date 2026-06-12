@@ -179,6 +179,48 @@ class SyncTest < ActiveSupport::TestCase
     assert_equal "completed", account_sync.reload.status
   end
 
+  test "finalize_if_all_children_finalized is a no-op when sync is already completed" do
+    family = families(:dylan_family)
+    account = accounts(:connected)
+
+    parent_sync = Sync.create!(syncable: family, status: :completed)
+    child_sync  = Sync.create!(syncable: account, parent: parent_sync)
+
+    # Parent is already completed — completing the child must NOT re-run post-sync
+    Family.any_instance.expects(:perform_post_sync).never
+    Family.any_instance.expects(:broadcast_sync_complete).never
+
+    Account.any_instance.stubs(:perform_post_sync)
+    Account.any_instance.stubs(:broadcast_sync_complete)
+    Account.any_instance.stubs(:perform_sync)
+
+    child_sync.perform
+
+    assert_equal "completed", child_sync.reload.status
+    assert_equal "completed", parent_sync.reload.status
+  end
+
+  test "finalize_if_all_children_finalized runs post-sync on already-failed parent when children finish" do
+    family = families(:dylan_family)
+    account = accounts(:connected)
+
+    parent_sync = Sync.create!(syncable: family, status: :failed)
+    child_sync  = Sync.create!(syncable: account, parent: parent_sync)
+
+    # Parent is already failed — post-sync should still fire (cleanup/broadcast)
+    Family.any_instance.expects(:perform_post_sync).once
+    Family.any_instance.expects(:broadcast_sync_complete).once
+
+    Account.any_instance.stubs(:perform_post_sync)
+    Account.any_instance.stubs(:broadcast_sync_complete)
+    Account.any_instance.stubs(:perform_sync)
+
+    child_sync.perform
+
+    assert_equal "completed", child_sync.reload.status
+    assert_equal "failed", parent_sync.reload.status
+  end
+
   test "clean marks stale incomplete rows" do
     stale_pending = Sync.create!(
       syncable: accounts(:depository),

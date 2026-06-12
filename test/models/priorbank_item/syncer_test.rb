@@ -61,8 +61,7 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
     assert_equal csv_path, account_sync.data["csv_path"]
   end
 
-  test "download_statements continues to next account when one account fails" do
-    # Create a second linked priorbank account
+  test "download_statements raises and creates no account syncs when any download fails" do
     second_account = accounts(:investment)
     second_priorbank_account = PriorbankAccount.create!(
       account_type: "Дебетовая карта",
@@ -70,38 +69,51 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
       name: "Visa USD",
       currency: "USD"
     )
-    AccountProvider.create!(
-      account: second_account,
-      provider: second_priorbank_account
-    )
+    AccountProvider.create!(account: second_account, provider: second_priorbank_account)
 
     session_double = mock("browser_session")
-    csv_path = "/tmp/priorbank_statements_xyz/statement.csv"
 
-    # Visa BYN (first account) fails; Visa USD (second account) succeeds.
-    # Use per-card mocks instead of any_instance — any_instance ignores blocks in Mocha.
     failing_downloader = mock("failing_downloader")
     failing_downloader.stubs(:call).raises(StandardError, "Download failed")
-
-    succeeding_downloader = mock("succeeding_downloader")
-    succeeding_downloader.stubs(:call).returns(csv_path)
 
     PriorbankAccount::StatementDownloader.stubs(:new).with(
       anything, anything, @priorbank_account.name, has_key(:session)
     ).returns(failing_downloader)
 
-    PriorbankAccount::StatementDownloader.stubs(:new).with(
-      anything, anything, second_priorbank_account.name, has_key(:session)
-    ).returns(succeeding_downloader)
-
-    # First account (Visa BYN) fails — second account (Visa USD) should still get a sync record
-    assert_difference -> { Sync.where(status: "pending").count }, 1 do
+    assert_raises(StandardError) do
       @syncer.send(:download_statements, session_double, @item_sync)
     end
 
-    assert_equal 0, @priorbank_account.syncs.where(status: :pending).count, "failing account must have no pending sync"
-    assert_equal 1, second_priorbank_account.syncs.where(status: :pending).count, "succeeding account must have a pending sync"
-    assert_equal csv_path, second_priorbank_account.syncs.where(status: :pending).first.data["csv_path"]
+    assert_equal 0, @priorbank_account.syncs.where(status: :pending).count
+    assert_equal 0, second_priorbank_account.syncs.where(status: :pending).count
+  end
+
+  test "download_statements creates no account syncs when first download fails (phase-2 atomicity)" do
+    second_account = accounts(:investment)
+    second_priorbank_account = PriorbankAccount.create!(
+      account_type: "Дебетовая карта",
+      priorbank_item: @priorbank_item,
+      name: "Visa USD",
+      currency: "USD"
+    )
+    AccountProvider.create!(account: second_account, provider: second_priorbank_account)
+
+    session_double = mock("browser_session")
+
+    # First account fails — second never gets a chance to download
+    failing_downloader = mock("failing_downloader")
+    failing_downloader.stubs(:call).raises(StandardError, "timeout")
+    PriorbankAccount::StatementDownloader.stubs(:new).with(
+      anything, anything, @priorbank_account.name, has_key(:session)
+    ).returns(failing_downloader)
+
+    assert_no_enqueued_jobs(only: SyncJob) do
+      assert_raises(StandardError) do
+        @syncer.send(:download_statements, session_double, @item_sync)
+      end
+    end
+
+    assert_equal 0, Sync.where(syncable: [ @priorbank_account, second_priorbank_account ]).count
   end
 
   test "download_statements only downloads for accounts with an account_provider (linked accounts)" do
@@ -126,19 +138,6 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
 
     # Unlinked account should have no sync records created
     assert_equal 0, unlinked_priorbank_account.syncs.count
-  end
-
-  test "download_statements logs warning on per-account failure without aborting" do
-    session_double = mock("browser_session")
-
-    PriorbankAccount::StatementDownloader.any_instance.stubs(:call).raises(StandardError, "Network timeout")
-
-    Rails.logger.expects(:warn).with(includes("Visa BYN")).at_least_once
-
-    # Should not raise
-    assert_nothing_raised do
-      @syncer.send(:download_statements, session_double, @item_sync)
-    end
   end
 
   test "download_statements records progress update for each account" do
@@ -218,15 +217,15 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
 
   # ── perform_sync (public entry point) ─────────────────────────────────────
 
-  test "perform_sync calls fetch_accounts_from_priorbank and import_accounts without marking sync failed" do
+  test "perform_sync completes the item sync after browser work succeeds" do
+    @item_sync.start!
+
     @syncer.expects(:fetch_accounts_from_priorbank).with(@item_sync).returns([])
     @syncer.expects(:import_accounts).with([], @item_sync)
 
     @syncer.perform_sync(@item_sync)
 
-    @item_sync.reload
-    # Item sync stays in its current state — completion is driven by children finalizing.
-    assert_not_equal "failed", @item_sync.status
+    assert_equal "completed", @item_sync.reload.status
   end
 
   test "perform_sync records error and calls mark_failed when an error is raised" do
@@ -237,6 +236,8 @@ class PriorbankItem::SyncerTest < ActiveSupport::TestCase
   end
 
   test "fetch_accounts_from_priorbank calls download_statements and quits session" do
+    @item_sync.start!
+
     session_double = mock("browser_session")
     session_double.stubs(:login_and_navigate_to_cards)
     session_double.expects(:quit).once
