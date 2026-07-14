@@ -33,7 +33,6 @@ class PriorbankAccount::CsvParser
     result
   end
 
-  # Class method to allow reuse in TransactionPriorImport
   def self.extract_transaction_lines(raw_csv)
     lines = raw_csv.split("\n")
     csv_lines = []

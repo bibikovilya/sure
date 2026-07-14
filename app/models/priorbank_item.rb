@@ -26,6 +26,7 @@ class PriorbankItem < ApplicationRecord
   has_many :priorbank_accounts, dependent: :destroy
 
   scope :active, -> { where(scheduled_for_deletion: false) }
+  scope :syncable, -> { active }
   scope :ordered, -> { order(created_at: :desc) }
   scope :needs_update, -> { where(status: :requires_update) }
 
