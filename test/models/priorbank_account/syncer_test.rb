@@ -1,6 +1,8 @@
 require "test_helper"
 
 class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
+  FIXTURE_CSV_PATH = Rails.root.join("test/fixtures/files/priorbank_statement.csv").to_s
+
   setup do
     @account = accounts(:depository_byn)
     priorbank_item = PriorbankItem.create!(
@@ -19,25 +21,18 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
       account: @account,
       provider: @priorbank_account
     )
-    @sync = Sync.create!(syncable: @priorbank_account)
+    @sync = Sync.create!(syncable: @priorbank_account, data: { "csv_path" => FIXTURE_CSV_PATH })
     @syncer = PriorbankAccount::Syncer.new(@priorbank_account)
 
     # Common stubs used across tests
-    stub_statement_download
+    stub_csv_encoding
     stub_market_data_import
     stub_balance_materialization
     stub_holdings_materialization
     stub_auto_match_transfers
   end
 
-  def stub_statement_download(csv_data = sample_prior_csv)
-    browser_session_mock = mock()
-    browser_session_mock.stubs(:login_and_navigate_to_cards)
-    browser_session_mock.stubs(:page).returns(mock())
-    browser_session_mock.stubs(:quit)
-    Priorbank::BrowserSession.stubs(:new).returns(browser_session_mock)
-    PriorbankAccount::StatementDownloader.any_instance.stubs(:call).returns("/tmp/test.csv")
-    PriorbankAccount::StatementDownloader.any_instance.stubs(:teardown)
+  def stub_csv_encoding(csv_data = sample_prior_csv)
     Utils::CsvEncodingFixer.stubs(:convert_file).returns(csv_data)
   end
 
@@ -82,7 +77,7 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
       Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
     CSV
 
-    stub_statement_download(atm_csv)
+    stub_csv_encoding(atm_csv)
 
     assert_difference -> { Transfer.count } => 1,
                       -> { Account.count } => 1 do # Cash account created
@@ -119,20 +114,11 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
       window_end_date: Date.new(2024, 3, 31)
     )
 
-    downloader_mock = mock()
-    downloader_mock.expects(:call).returns("/tmp/test.csv")
-    downloader_mock.expects(:teardown)
-
-    PriorbankAccount::StatementDownloader.expects(:new).with(
-      Date.new(2024, 1, 1),
-      Date.new(2024, 3, 31),
-      @priorbank_account.name,
-      has_entries(headless: true, sync: @sync, login: "testuser", password: "testpass")
-    ).returns(downloader_mock)
-
-    Utils::CsvEncodingFixer.stubs(:convert_file).returns(sample_prior_csv)
-
     @syncer.perform_sync(@sync)
+
+    @sync.reload
+    assert_equal Date.new(2024, 1, 1), @sync.window_start_date
+    assert_equal Date.new(2024, 3, 31), @sync.window_end_date
   end
 
   test "perform_sync uses default date window if not provided" do
@@ -146,27 +132,49 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
       entryable: Transaction.new
     )
 
-    expected_start = Date.new(2024, 1, 15)
-    expected_end = Date.new(2024, 4, 15) # 3 months from last entry
-
-    downloader_mock = mock()
-    downloader_mock.expects(:call).returns("/tmp/test.csv")
-    downloader_mock.expects(:teardown)
-
-    PriorbankAccount::StatementDownloader.expects(:new).with(
-      expected_start,
-      expected_end,
-      @priorbank_account.name,
-      has_entries(headless: true, sync: @sync)
-    ).returns(downloader_mock)
-
-    Utils::CsvEncodingFixer.stubs(:convert_file).returns(sample_prior_csv)
-
     @syncer.perform_sync(@sync)
+
+    @sync.reload
+    assert_equal Date.new(2024, 1, 15), @sync.window_start_date
+  end
+
+  test "perform_sync raises error when csv_path is missing from sync data" do
+    @sync.update!(data: {})
+
+    error = assert_raises(RuntimeError) do
+      @syncer.perform_sync(@sync)
+    end
+
+    assert_includes error.message, "No statement CSV found in sync data"
+    assert_includes error.message, "run a full Priorbank item sync first"
+  end
+
+  test "perform_sync marks sync as failed when csv_path is missing" do
+    @sync.update!(data: {})
+
+    assert_raises(RuntimeError) do
+      @syncer.perform_sync(@sync)
+    end
+
+    @sync.reload
+    error_step = @sync.data["steps"].find { |p| p["status"] == "error" }
+    assert error_step.present?
+    assert_includes error_step["message"], "No statement CSV found in sync data"
+  end
+
+  test "perform_sync raises error when csv_path points to non-existent file" do
+    @sync.update!(data: { "csv_path" => "/tmp/nonexistent_priorbank_file.csv" })
+
+    error = assert_raises(RuntimeError) do
+      @syncer.perform_sync(@sync)
+    end
+
+    assert_includes error.message, "No statement CSV found in sync data"
   end
 
   test "perform_sync handles errors gracefully" do
-    PriorbankAccount::StatementDownloader.any_instance.stubs(:call).raises(StandardError.new("Download failed"))
+    Utils::CsvEncodingFixer.unstub(:convert_file)
+    Utils::CsvEncodingFixer.stubs(:convert_file).raises(StandardError.new("Encoding failed"))
 
     assert_raises(StandardError) do
       @syncer.perform_sync(@sync)
@@ -175,7 +183,7 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
     @sync.reload
     error_message = @sync.data["steps"].find { |p| p["status"] == "error" }
     assert error_message.present?
-    assert_includes error_message["message"], "Download failed"
+    assert_includes error_message["message"], "Encoding failed"
   end
 
   test "perform_sync filters duplicate transactions" do
@@ -218,7 +226,7 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
       Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
     CSV
 
-    stub_statement_download(atm_csv)
+    stub_csv_encoding(atm_csv)
 
     # Should materialize balances for both main account and created cash account
     Balance::Materializer.any_instance.unstub(:materialize_balances)
@@ -235,9 +243,9 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
   end
 
   test "handles CSV encoding issues" do
-    # Mock encoding fix
+    # Verify convert_file is called with the csv_path from sync data
     Utils::CsvEncodingFixer.unstub(:convert_file)
-    Utils::CsvEncodingFixer.expects(:convert_file).with("/tmp/test.csv").returns(sample_prior_csv)
+    Utils::CsvEncodingFixer.expects(:convert_file).with(FIXTURE_CSV_PATH).returns(sample_prior_csv)
 
     @syncer.perform_sync(@sync)
 
@@ -254,15 +262,13 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
     assert @sync.data["fixed_csv_data"].present?
   end
 
-  test "stores window_start_date and window_end_date in sync.data" do
+  test "stores window_start_date and window_end_date in sync columns" do
     @syncer.perform_sync(@sync)
 
     @sync.reload
-    assert @sync.data["window_start_date"].present?
-    assert @sync.data["window_end_date"].present?
-    assert Date.parse(@sync.data["window_start_date"]).is_a?(Date)
-    assert Date.parse(@sync.data["window_end_date"]).is_a?(Date)
-    assert Date.parse(@sync.data["window_end_date"]) >= Date.parse(@sync.data["window_start_date"])
+    assert @sync.window_start_date.present?
+    assert @sync.window_end_date.present?
+    assert @sync.window_end_date >= @sync.window_start_date
   end
 
   test "stores account_details in sync.data" do
@@ -332,7 +338,7 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
       Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
     CSV
 
-    stub_statement_download(csv_without_blocked)
+    stub_csv_encoding(csv_without_blocked)
 
     @syncer.perform_sync(@sync)
 
@@ -349,7 +355,7 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
       Всего по контракту,Зачислено,Списано,Комиссия/Money-back,Изменение баланса,
     CSV
 
-    stub_statement_download(csv_without_details)
+    stub_csv_encoding(csv_without_details)
 
     @syncer.perform_sync(@sync)
 
@@ -376,7 +382,7 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
     original_balance = BigDecimal("50.00")
     @priorbank_account.update!(current_balance: original_balance)
 
-    stub_statement_download(csv_without_balance)
+    stub_csv_encoding(csv_without_balance)
 
     @syncer.perform_sync(@sync)
 
@@ -406,18 +412,7 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
     assert_equal 0, @account.entries.count
 
     expected_start = Date.new(2024, 3, 31)
-    expected_end = expected_start + 3.months
-
-    downloader_mock = mock()
-    downloader_mock.expects(:call).returns("/tmp/test.csv")
-    downloader_mock.expects(:teardown)
-
-    PriorbankAccount::StatementDownloader.expects(:new).with(
-      expected_start,
-      expected_end,
-      @priorbank_account.name,
-      has_entries(headless: true, sync: @sync)
-    ).returns(downloader_mock)
+    expected_end = Date.current
 
     @syncer.perform_sync(@sync)
 

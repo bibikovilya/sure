@@ -1,12 +1,16 @@
 class Priorbank::BrowserSession
   LOGIN_PATH = "https://www.prior.by/web/"
+  BROWSER_TIMEOUT = 30
+  PROCESS_TIMEOUT = 60
+  POPUP_SELECTORS = [ "div.k-widget.k-window", "div.modal", '[role="dialog"]' ].freeze
+  CLOSE_BUTTON_SELECTORS = [ "span.k-i-close", ".k-window-action.k-i-close", "button.close", "[aria-label='Close']", "button[data-dismiss='modal']" ].freeze
 
   attr_reader :browser, :page, :sync, :login, :password
 
   def initialize(login:, password:, sync: nil, headless: true)
     @browser = Ferrum::Browser.new(
-      timeout: 30,
-      process_timeout: 60,
+      timeout: BROWSER_TIMEOUT,
+      process_timeout: PROCESS_TIMEOUT,
       headless: headless,
       browser_options: {
         "no-sandbox": nil,
@@ -20,7 +24,10 @@ class Priorbank::BrowserSession
     @password = password
   end
 
-  def login_and_navigate_to_cards
+  # Authenticates the browser session. Raises on credential failure.
+  # Call this separately from open_cards_page so callers can distinguish
+  # auth failures (requires re-authentication) from navigation failures.
+  def login
     login_to_priorbank
 
     sync_update("wait_ready", "Waiting for page to be fully loaded...")
@@ -28,8 +35,10 @@ class Priorbank::BrowserSession
 
     sync_update("popup", "Closing popups...")
     close_popups
+  end
 
-    sync_update("navigation", "Opening cards page...")
+  def login_and_navigate_to_cards
+    login
     open_cards_page
   end
 
@@ -53,10 +62,86 @@ class Priorbank::BrowserSession
       (wait -= step) > 0 ? sleep(step) : break
     end
 
+    Rails.logger.warn "[Priorbank::BrowserSession] Timed out waiting for selector: #{selector}" unless node
     node
   end
 
+  def open_cards_page
+    with_retry(attempts: 5, base_delay: 1) do
+      sync_update("navigation", "Navigating to cards page...")
+
+      close_popups
+
+      unless menu_item_visible?("Карты")
+        page.css("span.menu-item-parent").find { |m| m.text == "Мои продукты" }.click
+        page.network.wait_for_idle(timeout: 5) rescue nil
+      end
+
+      page.css("span.menu-item-parent").find { |m| m.text == "Карты" }.click
+      page.network.wait_for_idle(timeout: 5) rescue nil
+
+      self.wait_for("div.bank-cards-list", wait: 5, step: 0.5)
+
+      raise "Cards page did not load (title: '#{page.current_title}')" if page.current_title != "Платежные карточки"
+
+      sync_update("navigation", "Cards page loaded", "success")
+    end
+  end
+
   private
+
+    # Ferrum has no built-in visible? — offsetParent is null for elements hidden
+    # by display:none on themselves or any ancestor.
+    def menu_item_visible?(text)
+      page.evaluate(<<~JS)
+        (function() {
+          var spans = document.querySelectorAll('span.menu-item-parent');
+          for (var i = 0; i < spans.length; i++) {
+            if (spans[i].textContent.trim() === '#{text}') {
+              return spans[i].offsetParent !== null;
+            }
+          }
+          return false;
+        })()
+      JS
+    end
+
+    def screenshot_on_failure(label)
+      timestamp = Time.now.to_i
+      path = Rails.root.join("tmp", "priorbank-#{label}-#{timestamp}.png").to_s
+      page.screenshot(path: path, full: true)
+      Rails.logger.info "[Priorbank::BrowserSession] Screenshot saved: #{path}"
+
+      if sync
+        sync.error_screenshot.attach(
+          io: File.open(path),
+          filename: "priorbank-#{label}-#{sync.id}-#{timestamp}.png",
+          content_type: "image/png"
+        )
+      end
+
+      path
+    rescue => e
+      Rails.logger.warn "[Priorbank::BrowserSession] Failed to save screenshot for '#{label}': #{e.message}"
+      nil
+    end
+
+    def with_retry(attempts: 3, base_delay: 1)
+      attempts.times do |attempt|
+        begin
+          return yield
+        rescue => e
+          delay = base_delay * (2**attempt)
+          sync_update("retry", "Attempt #{attempt + 1}/#{attempts} failed: #{e.message}. Retrying in #{delay}s...")
+          if attempt == attempts - 1
+            screenshot_on_failure("retry-failure") if page
+            raise
+          else
+            sleep(delay)
+          end
+        end
+      end
+    end
 
     def sync_update(step, message, status = "in_progress")
       return unless sync
@@ -69,7 +154,6 @@ class Priorbank::BrowserSession
       sync_update("login", "Logging into Priorbank...")
       page.go_to LOGIN_PATH
       page.network.wait_for_idle(timeout: 10)
-      sleep(1)
 
       sync_update("login", "Waiting for login form...")
       form = self.wait_for('//form[contains(@action, "Login")]', wait: 10, step: 0.5)
@@ -86,35 +170,31 @@ class Priorbank::BrowserSession
       raise "Submit button not found" unless submit_button
 
       sync_update("login", "Filling in credentials...")
-      sleep(0.5)
 
       login_input.focus
-      sleep(0.2)
+      sleep(0.05)
       login_input.type @login
-      sleep(0.2)
 
       login_value = page.evaluate("document.querySelector('input[name=\"UserName\"]').value")
       raise "Login field was not filled properly" if login_value.to_s.empty?
       sync_update("login", "Login field filled: #{login_value.length} characters")
 
       password_input.focus
-      sleep(0.2)
+      sleep(0.05)
       password_input.type @password
-      sleep(0.2)
 
       password_value = page.evaluate("document.querySelector('input[name=\"Password\"]').value")
       raise "Password field was not filled properly" if password_value.to_s.empty?
       sync_update("login", "Password field filled: #{password_value.length} characters")
 
       sync_update("login", "Submitting login form...")
-      sleep(0.5)
       submit_button.click
 
-      sleep(2)
-      page.network.wait_for_idle(timeout: 15)
-
-      current_title = page.current_title
-      raise "Failed to login to Priorbank. Current page: '#{current_title}'" if current_title != "Рабочий стол"
+      with_retry(attempts: 5, base_delay: 1) do
+        page.network.wait_for_idle(timeout: 15)
+        current_title = page.current_title
+        raise "Failed to login to Priorbank. Current page: '#{current_title}'" if current_title != "Рабочий стол"
+      end
 
       sync_update("login", "Successfully logged in", "success")
     end
@@ -137,64 +217,54 @@ class Priorbank::BrowserSession
         sleep(0.5)
       end
 
-      # Give an extra moment for JavaScript to settle
-      sleep(1)
       page.network.wait_for_idle(timeout: 5) rescue nil
 
       sync_update("wait_ready", "Page is ready", "success")
     end
 
     def close_popups
-      begin
-        popup = page.at_css("div.k-widget.k-window")
-        return unless popup
-
-        is_visible = popup.visible? rescue false
-        return unless is_visible
-
-        close_button = popup.at_css("span.k-i-close")
-        if close_button
-          close_button.focus.click
-          sync_update("popup", "Closed a popup")
-          sleep(0.5)
-        else
-          sync_update("popup", "No close button found on popup")
-        end
-      rescue => e
-        sync_update("popup", "Error while closing popup: #{e.message}")
-      end
-    end
-
-    def open_cards_page
-      max_attempts = 10
-      attempts = 0
+      max_iterations = 10
+      iterations = 0
 
       loop do
-        attempts += 1
-        break if attempts > max_attempts
+        break if iterations >= max_iterations
+        iterations += 1
+        closed_any = false
 
-        begin
-          sync_update("navigation", "Navigating to cards page (attempt #{attempts})...")
+        POPUP_SELECTORS.each do |selector|
+          begin
+            popup = page.at_css(selector)
+            next unless popup
 
-          close_popups
-          sleep(0.5)
+            # page.evaluate (page-level) dispatches JS click to bypass CDP's
+            # "element must be interactive" check that fails on modal overlays.
+            # Ferrum::Node has no #evaluate; only Ferrum::Page does.
+            closed = page.evaluate(<<~JS)
+              (function() {
+                var popup = document.querySelector(#{selector.to_json});
+                if (!popup) return 0;
+                var btns = #{CLOSE_BUTTON_SELECTORS.to_json};
+                for (var i = 0; i < btns.length; i++) {
+                  var btn = popup.querySelector(btns[i]);
+                  if (btn) { btn.click(); return 1; }
+                }
+                return 0;
+              })()
+            JS
 
-          page.css("span.menu-item-parent").find { |menu| menu.text == "Мои продукты" }.click
-          sleep(0.3)
-          page.css("span.menu-item-parent").find { |menu| menu.text == "Карты" }.click
-
-          self.wait_for("div.bank-cards-list", init: 1, wait: 5, step: 0.5)
-
-          if page.current_title == "Платежные карточки"
-            sync_update("navigation", "Cards page loaded", "success")
-            return
+            if closed > 0
+              sync_update("popup", "Closed popup (#{selector})")
+              page.network.wait_for_idle(timeout: 3) rescue nil
+              closed_any = true
+            else
+              sync_update("popup", "No close button found on popup (#{selector})")
+            end
+          rescue => e
+            sync_update("popup", "Error while closing popup (#{selector}): #{e.message}")
           end
-        rescue => e
-          sync_update("navigation", "Attempt #{attempts} failed: #{e.message}")
-          sleep(1)
-          next if attempts < max_attempts
-          raise "Failed to open cards page after #{max_attempts} attempts: #{e.message}"
         end
+
+        break unless closed_any
       end
     end
 end

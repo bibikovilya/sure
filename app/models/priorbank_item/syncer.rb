@@ -6,18 +6,16 @@ class PriorbankItem::Syncer
   end
 
   def perform_sync(sync)
-    begin
-      fetched_accounts = fetch_accounts_from_priorbank(sync)
-      import_accounts(fetched_accounts, sync)
-
-      mark_completed(sync)
-    rescue => e
-      mark_failed(sync, e)
-    end
+    fetched_accounts = fetch_accounts_from_priorbank(sync)
+    import_accounts(fetched_accounts, sync)
+    sync.complete!
+  rescue => e
+    mark_failed(sync, e)
   end
 
   def perform_post_sync
-    # no-op
+    # Account sync jobs are enqueued immediately in download_statements when each
+    # child Sync record is created. Nothing to do here.
   end
 
   private
@@ -25,6 +23,7 @@ class PriorbankItem::Syncer
     def fetch_accounts_from_priorbank(sync)
       session = nil
       accounts = []
+      login_succeeded = false
 
       begin
         sync_update(sync, "browser_init", "Initializing browser...")
@@ -34,13 +33,20 @@ class PriorbankItem::Syncer
           sync: sync,
           headless: true
         )
-        session.login_and_navigate_to_cards
+        session.login
+        login_succeeded = true
+        session.open_cards_page
 
         sync_update(sync, "extraction", "Extracting account information...")
         accounts = extract_card_data(session, sync)
         sync_update(sync, "extraction", "Successfully extracted #{accounts.count} accounts", "success")
+
+        download_statements(session, sync)
+        priorbank_item.update!(status: :good)
       rescue => e
-        priorbank_item.update!(status: :requires_update)
+        # Only flag re-authentication when login itself fails; extraction or download
+        # errors do not mean credentials are invalid.
+        priorbank_item.update!(status: :requires_update) unless login_succeeded
         raise e
       ensure
         session&.quit
@@ -75,14 +81,14 @@ class PriorbankItem::Syncer
           # Select this card
           checkbox.focus
           checkbox.click
-          sleep(0.3)
+          session.wait_for("ul.nav.nav-pills li.enabled a", wait: 3, step: 0.2)
 
           # Click on "Подробнее" link to open details
           details_link = page.css("ul.nav.nav-pills li.enabled a").find { |link| link.text.strip == "Подробнее" }
           raise "Details link not found" unless details_link
 
           details_link.click
-          sleep(0.5)
+          session.wait_for("div.product-details.card-details", wait: 5, step: 0.3)
 
           # Extract card details from the details page
           card_data = extract_card_details(session, sync)
@@ -95,18 +101,16 @@ class PriorbankItem::Syncer
           close_icon = page.at_css("li.k-item.k-state-active i.icon-kendo-tabstrip-close")
           if close_icon
             close_icon.click
-            sleep(0.3)
             session.wait_for("div.bank-cards-list", wait: 3, step: 0.3)
           end
         rescue => e
           Rails.logger.warn("[PriorbankItem::Syncer] Failed to extract card #{index + 1}: #{e.message}")
           sync_update(sync, "extraction", "Warning: Failed to extract card #{index + 1}: #{e.message}")
-          sleep(5.minutes)
 
           # Try to navigate back to cards list
           begin
             page.css("span.menu-item-parent").find { |menu| menu.text == "Карты" }.click
-            sleep(0.3)
+            session.wait_for("div.bank-cards-list", wait: 3, step: 0.3)
           rescue
             # If we can't go back, we might need to re-navigate
             Rails.logger.warn("[PriorbankItem::Syncer] Failed to navigate back to cards list")
@@ -160,6 +164,45 @@ class PriorbankItem::Syncer
       balance_string.gsub(/\s+/, "").gsub(",", ".").to_f
     rescue
       nil
+    end
+
+    def download_statements(session, item_sync)
+      linked_accounts = priorbank_item.priorbank_accounts.joins(:account_provider)
+
+      # Phase 1: download all CSVs — fail-fast on first error so no account
+      # syncs are enqueued unless every download succeeds.
+      downloads = {}
+      linked_accounts.each do |account|
+        window = account.sync_window
+        sync_update(item_sync, "download_statements", "Downloading statement for '#{account.name}' (#{window[:start_date]}–#{window[:end_date]})...")
+
+        session.open_cards_page
+
+        downloader = PriorbankAccount::StatementDownloader.new(
+          window[:start_date],
+          window[:end_date],
+          account.name,
+          session: session,
+          sync: item_sync
+        )
+        downloads[account] = { csv_path: downloader.call, window: window }
+
+        sync_update(item_sync, "download_statements", "Statement downloaded for '#{account.name}'", "success")
+      end
+
+      # Phase 2: all downloads succeeded — atomically enqueue account syncs.
+      # Stagger by 5 seconds each to avoid saturating the DB connection pool.
+      downloads.each_with_index do |(account, result), index|
+        account.syncs.where(status: :pending).find_each(&:mark_stale!)
+        account_sync = account.syncs.create!(
+          status: :pending,
+          parent: item_sync,
+          window_start_date: result[:window][:start_date],
+          window_end_date: result[:window][:end_date],
+          data: { "csv_path" => result[:csv_path] }
+        )
+        SyncJob.set(wait: index * 5.seconds).perform_later(account_sync)
+      end
     end
 
     def import_accounts(fetched_accounts, sync)
@@ -220,18 +263,14 @@ class PriorbankItem::Syncer
       sync_update(sync, "import", "Imported #{imported_count}, updated #{updated_count} accounts", "success")
     end
 
-    def mark_completed(sync)
-      sync.complete!
-    end
-
     def mark_failed(sync, error)
-      if sync.respond_to?(:status) && sync.status.to_s == "completed"
+      if sync.status.to_s == "completed"
         Rails.logger.warn("PriorbankItem::Syncer#mark_failed called after completion: #{error.class} - #{error.message}")
         return
       end
 
       sync.fail!
-      sync.update!(error: error.message) if sync.respond_to?(:error)
+      sync.update!(error: error.message)
     end
 
     def sync_update(sync, step, message, status = "in_progress")

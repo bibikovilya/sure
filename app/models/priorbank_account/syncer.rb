@@ -8,24 +8,33 @@ class PriorbankAccount::Syncer
 
   def perform_sync(sync)
     @sync = sync
-    sync_step_update("start", "Starting Priorbank account #{account.id} - #{account.name} sync...")
+    retries = 0
 
-    calculate_and_save_window
-    csv_data = fetch_transactions
-    parsed_data = parse_csv(csv_data)
-    update_current_balance(parsed_data[:account_details])
-    records = build_transactions(parsed_data[:transactions])
-    transactions, transfers = import_transactions(records)
+    begin
+      sync_step_update("start", "Starting Priorbank account #{account.id} - #{account.name} sync...")
 
-    import_market_data
-    materialize_balances(transfers)
+      calculate_and_save_window
+      csv_data = fetch_transactions
+      parsed_data = parse_csv(csv_data)
+      update_current_balance(parsed_data[:account_details])
+      records = build_transactions(parsed_data[:transactions])
+      transactions, transfers = import_transactions(records)
 
-    sync.update(sync_stats: { imported_transactions: transactions.ids.count, imported_transfers: transfers.ids.count, skipped_duplicates: records[:duplicates].count })
+      import_market_data
+      materialize_balances(transfers)
 
-    sync_step_update("complete", "Sync completed successfully!", "success")
-  rescue => e
-    sync_step_update("complete", "Sync failed: #{e.message}", "error")
-    raise e
+      sync.update(sync_stats: { imported_transactions: transactions.ids.count, imported_transfers: transfers.ids.count, skipped_duplicates: records[:duplicates].count })
+
+      sync_step_update("complete", "Sync completed successfully!", "success")
+    rescue ActiveRecord::ConnectionTimeoutError
+      retries += 1
+      raise if retries >= 3
+      sleep(2 ** retries)
+      retry
+    rescue => e
+      sync_step_update("complete", "Sync failed: #{e.message}", "error")
+      raise e
+    end
   end
 
   def perform_post_sync
@@ -35,27 +44,11 @@ class PriorbankAccount::Syncer
   private
 
     def calculate_and_save_window
-      window_start = calculate_window_start
-      window_end = sync.window_end_date || [ window_start + 3.months, Date.current ].min
+      window = priorbank_account.sync_window
+      window_start = sync.window_start_date.presence || window[:start_date]
+      window_end = sync.window_end_date.presence || window[:end_date]
 
       sync.update!(window_start_date: window_start, window_end_date: window_end)
-      sync_data_update("window_start_date", window_start)
-      sync_data_update("window_end_date", window_end)
-    end
-
-    def calculate_window_start
-      # If sync has explicit window_start_date, use it
-      return sync.window_start_date if sync.window_start_date.present?
-
-      # Try to get the last successful sync's window_end_date
-      last_completed_sync = priorbank_account.syncs.where(status: "completed").order(created_at: :desc).first
-      return last_completed_sync.window_end_date if last_completed_sync&.window_end_date.present?
-
-      # Fall back to latest transaction date
-      return account.entries.maximum(:date) if account.entries.maximum(:date).present?
-
-      # Default to 3 months ago
-      3.months.ago.to_date
     end
 
     def sync_step_update(step, message, status = "in_progress")
@@ -70,25 +63,19 @@ class PriorbankAccount::Syncer
     end
 
     def fetch_transactions
-      sync_step_update("fetch_transactions", "Fetching transactions from #{sync.window_start_date.strftime('%d.%m.%Y')} to #{sync.window_end_date.strftime('%d.%m.%Y')}...")
+      sync_step_update("fetch_transactions", "Reading statement CSV from sync data...")
 
-      downloader = PriorbankAccount::StatementDownloader.new(
-        sync.window_start_date,
-        sync.window_end_date,
-        priorbank_account.name,
-        headless: true,
-        sync: sync,
-        login: priorbank_account.login,
-        password: priorbank_account.password
-      )
-      csv_file_path = downloader.call
+      csv_file_path = sync.data&.dig("csv_path")
+
+      if csv_file_path.blank? || !File.exist?(csv_file_path)
+        raise "No statement CSV found in sync data — run a full Priorbank item sync first"
+      end
 
       sync_step_update("fetch_transactions", "Fixing the downloaded file encoding #{csv_file_path}...")
       fixed_csv_data = Utils::CsvEncodingFixer.convert_file(csv_file_path)
       sync_step_update("fetch_transactions", "Downloaded file encoding fixed", "success")
       sync_data_update("fixed_csv_data", fixed_csv_data)
 
-      downloader.teardown
       fixed_csv_data
     rescue => e
       sync_step_update("fetch_transactions", "Error fetching transactions: #{e.message}", "error")
