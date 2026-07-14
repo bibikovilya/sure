@@ -191,7 +191,8 @@ class PriorbankItem::Syncer
       end
 
       # Phase 2: all downloads succeeded — atomically enqueue account syncs.
-      downloads.each do |account, result|
+      # Stagger by 5 seconds each to avoid saturating the DB connection pool.
+      downloads.each_with_index do |(account, result), index|
         account.syncs.where(status: :pending).find_each(&:mark_stale!)
         account_sync = account.syncs.create!(
           status: :pending,
@@ -200,7 +201,7 @@ class PriorbankItem::Syncer
           window_end_date: result[:window][:end_date],
           data: { "csv_path" => result[:csv_path] }
         )
-        SyncJob.perform_later(account_sync)
+        SyncJob.set(wait: index * 5.seconds).perform_later(account_sync)
       end
     end
 

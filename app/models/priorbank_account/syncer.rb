@@ -8,24 +8,33 @@ class PriorbankAccount::Syncer
 
   def perform_sync(sync)
     @sync = sync
-    sync_step_update("start", "Starting Priorbank account #{account.id} - #{account.name} sync...")
+    retries = 0
 
-    calculate_and_save_window
-    csv_data = fetch_transactions
-    parsed_data = parse_csv(csv_data)
-    update_current_balance(parsed_data[:account_details])
-    records = build_transactions(parsed_data[:transactions])
-    transactions, transfers = import_transactions(records)
+    begin
+      sync_step_update("start", "Starting Priorbank account #{account.id} - #{account.name} sync...")
 
-    import_market_data
-    materialize_balances(transfers)
+      calculate_and_save_window
+      csv_data = fetch_transactions
+      parsed_data = parse_csv(csv_data)
+      update_current_balance(parsed_data[:account_details])
+      records = build_transactions(parsed_data[:transactions])
+      transactions, transfers = import_transactions(records)
 
-    sync.update(sync_stats: { imported_transactions: transactions.ids.count, imported_transfers: transfers.ids.count, skipped_duplicates: records[:duplicates].count })
+      import_market_data
+      materialize_balances(transfers)
 
-    sync_step_update("complete", "Sync completed successfully!", "success")
-  rescue => e
-    sync_step_update("complete", "Sync failed: #{e.message}", "error")
-    raise e
+      sync.update(sync_stats: { imported_transactions: transactions.ids.count, imported_transfers: transfers.ids.count, skipped_duplicates: records[:duplicates].count })
+
+      sync_step_update("complete", "Sync completed successfully!", "success")
+    rescue ActiveRecord::ConnectionTimeoutError
+      retries += 1
+      raise if retries >= 3
+      sleep(2 ** retries)
+      retry
+    rescue => e
+      sync_step_update("complete", "Sync failed: #{e.message}", "error")
+      raise e
+    end
   end
 
   def perform_post_sync

@@ -267,5 +267,4 @@ class Priorbank::BrowserSession
         break unless closed_any
       end
     end
-
 end
