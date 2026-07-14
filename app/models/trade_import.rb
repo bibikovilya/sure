@@ -21,13 +21,15 @@ class TradeImport < Import
           qty: row.qty,
           currency: row.currency.presence || mapped_account.currency,
           price: row.price,
+          investment_activity_label: investment_activity_label_for(row.qty),
           entry: Entry.new(
             account: mapped_account,
             date: row.date_iso,
             amount: row.signed_amount,
             name: row.name,
             currency: row.currency.presence || mapped_account.currency,
-            import: self
+            import: self,
+            import_locked: true  # Protect from provider sync overwrites
           ),
         )
       end
@@ -53,7 +55,7 @@ class TradeImport < Import
   end
 
   def dry_run
-    mappings = { transactions: rows.count }
+    mappings = { transactions: rows_count }
 
     mappings.merge(
       accounts: Import::AccountMapping.for_import(self).creational.count
@@ -63,11 +65,11 @@ class TradeImport < Import
   end
 
   def csv_template
-    template = <<-CSV
+    template = <<~CSV
       date*,ticker*,exchange_operating_mic,currency,qty*,price*,account,name
-      05/15/2024,AAPL,XNAS,USD,10,150.00,Trading Account,Apple Inc. Purchase
-      05/16/2024,GOOGL,XNAS,USD,-5,2500.00,Investment Account,Alphabet Inc. Sale
-      05/17/2024,TSLA,XNAS,USD,2,700.50,Retirement Account,Tesla Inc. Purchase
+      2024-05-15,AAPL,XNAS,USD,10,150.00,Trading Account,Apple Inc. Purchase
+      2024-05-16,GOOGL,XNAS,USD,-5,2500.00,Investment Account,Alphabet Inc. Sale
+      2024-05-17,TSLA,XNAS,USD,2,700.50,Retirement Account,Tesla Inc. Purchase
     CSV
 
     csv = CSV.parse(template, headers: true)
@@ -76,6 +78,13 @@ class TradeImport < Import
   end
 
   private
+    def investment_activity_label_for(qty)
+      # Set activity label based on quantity signage
+      # Buy trades have positive qty, Sell trades have negative qty
+      return nil if qty.blank? || qty.to_d.zero?
+      qty.to_d.positive? ? "Buy" : "Sell"
+    end
+
     def find_or_create_security(ticker: nil, exchange_operating_mic: nil)
       return nil unless ticker.present?
 

@@ -1,28 +1,26 @@
+<%= content_for :page_title, t("recurring_transactions.title") %>
+<%= content_for :page_actions do %>
+  <% unless @family.recurring_transactions_disabled? %>
+    <%= render DS::Menu.new do |menu| %>
+      <% menu.with_item(
+          variant: "button",
+          text: t("recurring_transactions.cleanup_stale"),
+          href: cleanup_recurring_transactions_path,
+          method: :post,
+          icon: "trash-2") %>
+    <% end %>
+
+    <%= render DS::Link.new(
+      text: t("recurring_transactions.identify_patterns"),
+      icon: "search",
+      variant: "outline",
+      href: identify_recurring_transactions_path,
+      method: :post
+    ) %>
+  <% end %>
+<% end %>
+
 <div class="space-y-4 flex flex-col">
-  <header class="flex justify-between items-center text-primary font-medium">
-    <h1 class="text-xl"><%= t("recurring_transactions.title") %></h1>
-    <div class="flex items-center gap-2">
-      <% unless @family.recurring_transactions_disabled? %>        
-        <%= render DS::Menu.new do |menu| %>
-          <% menu.with_item(
-              variant: "button",
-              text: t("recurring_transactions.cleanup_stale"),
-              href: cleanup_recurring_transactions_path,
-              method: :post,
-              icon: "trash-2") %>
-        <% end %>
-
-        <%= render DS::Link.new(
-          text: t("recurring_transactions.identify_patterns"),
-          icon: "search",
-          variant: "outline",
-          href: identify_recurring_transactions_path,
-          method: :post
-        ) %>
-      <% end %>
-    </div>
-  </header>
-
   <div class="bg-container rounded-xl shadow-border-xs p-4">
     <div class="flex items-center justify-between">
       <div>
@@ -60,20 +58,21 @@
 
     <div class="bg-container rounded-xl shadow-border-xs p-4">
       <% if @recurring_transactions.empty? %>
-        <div class="text-center py-12">
-          <div class="text-secondary mb-4">
-            <%= icon "repeat", size: "xl" %>
-          </div>
-          <p class="text-primary font-medium mb-2"><%= t("recurring_transactions.empty.title") %></p>
-          <p class="text-secondary text-sm mb-4"><%= t("recurring_transactions.empty.description") %></p>
-          <%= render DS::Link.new(
-            text: t("recurring_transactions.identify_patterns"),
-            icon: "search",
-            variant: "primary",
-            href: identify_recurring_transactions_path,
-            method: :post
-          ) %>
-        </div>
+        <%= render DS::EmptyState.new(
+          icon: "repeat",
+          title: t("recurring_transactions.empty.title"),
+          description: t("recurring_transactions.empty.description")
+        ) do |empty| %>
+          <% empty.with_action do %>
+            <%= render DS::Link.new(
+              text: t("recurring_transactions.identify_patterns"),
+              icon: "search",
+              variant: "primary",
+              href: identify_recurring_transactions_path,
+              method: :post
+            ) %>
+          <% end %>
+        <% end %>
       <% else %>
       <div class="rounded-xl bg-container-inset space-y-1 p-1">
         <div class="flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-secondary uppercase">
@@ -130,16 +129,22 @@
                     <% end %>
                   </div>
                 </td>
-                <td class="py-3 px-2 text-sm font-medium <%= recurring_transaction.amount.negative? ? "text-success" : "text-primary" %>">
-                  <% if recurring_transaction.manual? && recurring_transaction.has_amount_variance? %>
-                    <div class="inline-flex items-center gap-1 cursor-help group" title="<%= t("recurring_transactions.amount_range", min: format_money(-recurring_transaction.expected_amount_min_money), max: format_money(-recurring_transaction.expected_amount_max_money)) %>">
-                      <span class="text-xs text-secondary group-hover:text-primary transition-colors">~</span>
-                      <span class="border-b border-dashed border-subdued group-hover:border-primary transition-colors"><%= format_money(-recurring_transaction.expected_amount_avg_money) %></span>
-                    </div>
-                  <% else %>
-                    <%= format_money(-recurring_transaction.amount_money) %>
-                  <% end %>
-                </td>
+                <% if recurring_transaction.transfer? %>
+                  <td class="py-3 px-2 text-sm font-medium privacy-sensitive text-secondary">
+                    <%= format_money(recurring_transaction.amount_money.abs) %>
+                  </td>
+                <% else %>
+                  <td class="py-3 px-2 text-sm font-medium privacy-sensitive <%= recurring_transaction.amount.negative? ? "text-success" : "text-primary" %>">
+                    <% if recurring_transaction.manual? && recurring_transaction.has_amount_variance? %>
+                      <div class="inline-flex items-center gap-1 cursor-help group" title="<%= t("recurring_transactions.amount_range", min: format_money(-recurring_transaction.expected_amount_min_money), max: format_money(-recurring_transaction.expected_amount_max_money)) %>">
+                        <span class="text-xs text-secondary group-hover:text-primary transition-colors">~</span>
+                        <span class="border-b border-dashed border-subdued group-hover:border-primary transition-colors privacy-sensitive"><%= format_money(-recurring_transaction.expected_amount_avg_money) %></span>
+                      </div>
+                    <% else %>
+                      <%= format_money(-recurring_transaction.amount_money) %>
+                    <% end %>
+                  </td>
+                <% end %>
                 <td class="py-3 px-2 text-sm text-secondary">
                   <%= t("recurring_transactions.day_of_month", day: recurring_transaction.expected_day_of_month) %>
                 </td>
@@ -151,7 +156,7 @@
                 </td>
                 <td class="py-3 px-2 text-sm">
                   <% if recurring_transaction.active? %>
-                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-50 text-success">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-50 text-success theme-dark:bg-green-tint-10">
                       <%= t("recurring_transactions.status.active") %>
                     </span>
                   <% else %>

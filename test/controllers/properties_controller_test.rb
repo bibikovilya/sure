@@ -14,6 +14,7 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
         account: {
           name: "New Property",
           subtype: "house",
+          currency: "EUR",
           institution_name: "Property Lender",
           institution_domain: "propertylender.example",
           notes: "Property notes",
@@ -31,6 +32,7 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
     assert created_account.accountable.is_a?(Property)
     assert_equal "draft", created_account.status
     assert_equal 0, created_account.balance
+    assert_equal "EUR", created_account.currency
     assert_equal "Property Lender", created_account[:institution_name]
     assert_equal "propertylender.example", created_account[:institution_domain]
     assert_equal "Property notes", created_account[:notes]
@@ -93,8 +95,12 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
       }
     }
 
+    @account.reload
+    assert_equal 600000, @account.balance
+    assert_equal "EUR", @account.currency
+
     # If account is active, it renders balances view; otherwise redirects to address
-    if @account.reload.active?
+    if @account.active?
       assert_response :success
     else
       assert_redirected_to address_property_path(@account)
@@ -174,6 +180,91 @@ class PropertiesControllerTest < ActionDispatch::IntegrationTest
           region: "NY",
           country: "US",
           postal_code: "10001"
+        }
+      }
+    }
+
+    draft_account.reload
+    assert draft_account.active?
+    assert_redirected_to account_path(draft_account)
+  end
+
+  test "address update on draft account honors stored return_to over the account page" do
+    draft_account = Account.create!(
+      family: @user.family,
+      name: "Draft Property RT",
+      accountable: Property.new,
+      status: "draft",
+      balance: 500000,
+      currency: "USD"
+    )
+
+    # The property wizard (create → balances → address) doesn't thread return_to
+    # as a form param, so StoreLocation's session value is the only carrier.
+    get new_account_path(return_to: transactions_path)
+
+    patch update_address_property_path(draft_account), params: {
+      property: {
+        address_attributes: {
+          line1: "789 Activate St",
+          locality: "New York",
+          region: "NY",
+          country: "US",
+          postal_code: "10001"
+        }
+      }
+    }
+
+    draft_account.reload
+    assert draft_account.active?
+    assert_redirected_to transactions_path
+  end
+
+  test "address update ignores an external stored return_to (open-redirect guard)" do
+    draft_account = Account.create!(
+      family: @user.family,
+      name: "Draft Property Evil",
+      accountable: Property.new,
+      status: "draft",
+      balance: 500000,
+      currency: "USD"
+    )
+
+    # A hostile ?return_to is rejected at store time, so the wizard falls back
+    # to the account page rather than stream-redirecting off-site.
+    get new_account_path(return_to: "https://evil.example/phish")
+
+    patch update_address_property_path(draft_account), params: {
+      property: {
+        address_attributes: {
+          line1: "1 Safe St", locality: "NYC", region: "NY", country: "US", postal_code: "10001"
+        }
+      }
+    }
+
+    draft_account.reload
+    assert draft_account.active?
+    assert_redirected_to account_path(draft_account)
+  end
+
+  test "address update tolerates a non-String stored return_to without raising" do
+    draft_account = Account.create!(
+      family: @user.family,
+      name: "Draft Property Array",
+      accountable: Property.new,
+      status: "draft",
+      balance: 500000,
+      currency: "USD"
+    )
+
+    # `?return_to[]=foo` makes params[:return_to] an Array; safe_return_to must
+    # reject it via the is_a?(String) guard instead of raising NoMethodError.
+    get new_account_path("return_to" => [ "/transactions" ])
+
+    patch update_address_property_path(draft_account), params: {
+      property: {
+        address_attributes: {
+          line1: "1 Safe St", locality: "NYC", region: "NY", country: "US", postal_code: "10001"
         }
       }
     }

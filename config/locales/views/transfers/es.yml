@@ -8,10 +8,14 @@ es:
     form:
       amount: Importe
       date: Fecha
+      destination_amount: Importe de destino
+      destination_amount_display: "Importe de destino: %{amount}"
+      exchange_rate_display: "Tasa de cambio: %{rate}"
       expense: Gasto
       from: Desde
       income: Ingreso
       select_account: Seleccionar cuenta
+      source_amount: Importe de origen
       submit: Crear transferencia
       to: Hacia
       transfer: Transferencia

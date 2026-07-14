@@ -1,11 +1,30 @@
 module Family::Subscribeable
   extend ActiveSupport::Concern
 
+  CLEANUP_GRACE_PERIOD = 14.days
+  ARCHIVE_TRANSACTION_THRESHOLD = 12
+  ARCHIVE_RECENT_ACTIVITY_WINDOW = 14.days
+
   included do
     has_one :subscription, dependent: :destroy
+
+    scope :inactive_trial_for_cleanup, -> {
+      cutoff_with_sub = CLEANUP_GRACE_PERIOD.ago
+      cutoff_without_sub = (Subscription::TRIAL_DAYS.days + CLEANUP_GRACE_PERIOD).ago
+
+      expired_trial = left_joins(:subscription)
+        .where(subscriptions: { status: [ "paused", "trialing" ] })
+        .where(subscriptions: { trial_ends_at: ...cutoff_with_sub })
+
+      no_subscription = left_joins(:subscription)
+        .where(subscriptions: { id: nil })
+        .where(families: { created_at: ...cutoff_without_sub })
+
+      where(id: expired_trial).or(where(id: no_subscription))
+    }
   end
 
-  def billing_email
+  def payment_email
     primary_admin = users.admin.order(:created_at).first || users.super_admin.order(:created_at).first
 
     unless primary_admin.present?
@@ -41,12 +60,20 @@ module Family::Subscribeable
     subscription&.active?
   end
 
+  def can_manage_subscription?
+    stripe_customer_id.present?
+  end
+
   def needs_subscription?
     subscription.nil? && !self_hoster?
   end
 
-  def next_billing_date
+  def next_payment_date
     subscription&.current_period_ends_at
+  end
+
+  def subscription_pending_cancellation?
+    subscription&.pending_cancellation?
   end
 
   def start_subscription!(stripe_subscription_id)
@@ -76,5 +103,14 @@ module Family::Subscribeable
     if subscription&.status == "trialing" && days_left_in_trial < 0
       subscription.update!(status: "paused")
     end
+  end
+
+  def requires_data_archive?
+    return false unless transactions.count > ARCHIVE_TRANSACTION_THRESHOLD
+
+    trial_end = subscription&.trial_ends_at || (created_at + Subscription::TRIAL_DAYS.days)
+    recent_window_start = trial_end - ARCHIVE_RECENT_ACTIVITY_WINDOW
+
+    entries.where(date: recent_window_start..trial_end).exists?
   end
 end

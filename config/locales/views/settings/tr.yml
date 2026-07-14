@@ -1,10 +1,14 @@
 ---
 tr:
+  views:
+    settings:
+      payments:
+        renewal: "Katkınız %{date} tarihinde devam edecek."
   settings:
-    billings:
+    payments:
       show:
-        page_title: Faturalandırma
-        subscription_subtitle: Abonelik ve fatura bilgilerinizi güncelleyin
+        page_title: Ödeme
+        subscription_subtitle: Abonelik ve ödeme bilgilerinizi güncelleyin
         subscription_title: Aboneliği yönet
     preferences:
       show:
@@ -15,6 +19,7 @@ tr:
         general_title: Genel
         default_period: Varsayılan Dönem
         language: Dil
+        language_auto: Tarayıcı dili
         page_title: Tercihler
         theme_dark: Koyu
         theme_light: Açık
@@ -22,6 +27,12 @@ tr:
         theme_system: Sistem
         theme_title: Tema
         timezone: Zaman dilimi
+    appearances:
+      show:
+        modals_title: Modaller
+        modals_subtitle: Modal davranışını özelleştir
+        disable_modal_click_outside_title: Dışarı tıklandığında modalleri açık tut
+        disable_modal_click_outside_description: Modalların dışına tıklandığında kapanmasını engeller. Kaydedilmemiş değişiklikleri yanlışlıkla kaybetmemek için kullanışlıdır.
     profiles:
       destroy:
         cannot_remove_self: Kendinizi hesaptan çıkaramazsınız.
@@ -74,7 +85,7 @@ tr:
       accounts_label: Hesaplar
       api_key_label: API Anahtarı
       advanced_section_title: Gelişmiş
-      billing_label: Faturalandırma
+      payment_label: Ödeme
       categories_label: Kategoriler
       feedback_label: Geri Bildirim
       general_section_title: Genel

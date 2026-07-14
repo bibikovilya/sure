@@ -1,6 +1,8 @@
 require "test_helper"
 
 class ReportsControllerTest < ActionDispatch::IntegrationTest
+  include EntriesTestHelper
+
   setup do
     sign_in @user = users(:family_admin)
     @family = @user.family
@@ -39,6 +41,42 @@ class ReportsControllerTest < ActionDispatch::IntegrationTest
   test "index with last 6 months period" do
     get reports_path(period_type: :last_6_months)
     assert_response :ok
+
+    expected_end   = Date.current.end_of_month
+    expected_start = (expected_end + 1.day - 6.months).beginning_of_month
+
+    # Should show exactly 6 months, not 7
+    assert_equal 6, (expected_end.year * 12 + expected_end.month) - (expected_start.year * 12 + expected_start.month) + 1
+
+    # Page should include both boundary months
+    assert_includes @response.body, expected_start.strftime("%b %Y")
+    assert_includes @response.body, expected_end.strftime("%b %Y")
+
+    # Page should NOT include the months immediately outside the window
+    prev_month = expected_start - 1.month
+    next_month = expected_end + 1.month
+    assert_not_includes @response.body, prev_month.strftime("%b %Y")
+    assert_not_includes @response.body, next_month.strftime("%b %Y")
+  end
+
+  test "last 6 months default start date is consistent with navigation" do
+    # First load (no params) should produce the same start/end as the navigation arrows would
+    get reports_path(period_type: :last_6_months)
+    assert_response :ok
+
+    expected_end   = Date.current.end_of_month
+    expected_start = (expected_end + 1.day - 6.months).beginning_of_month
+
+    # Navigate forward from one window back — should land on the same default window
+    prev_start = expected_start - 6.months
+    prev_end   = prev_start + 6.months - 1.day
+
+    get reports_path(period_type: :last_6_months, start_date: prev_start, end_date: prev_end)
+    assert_response :ok
+
+    # The next-window link should point to the same dates as the default
+    assert_select "a[href=?]",
+      reports_path(period_type: :last_6_months, start_date: expected_start, end_date: expected_end)
   end
 
   test "index shows empty state when no transactions" do
@@ -80,7 +118,9 @@ class ReportsControllerTest < ActionDispatch::IntegrationTest
     get reports_path(period_type: :monthly)
     assert_response :ok
     assert_select "h2", text: I18n.t("reports.trends.title")
-    assert_select "th", text: I18n.t("reports.trends.month")
+    assert_select "thead" do
+      assert_select "th", text: I18n.t("reports.trends.month")
+    end
   end
 
   test "index handles invalid date parameters gracefully" do
@@ -103,19 +143,15 @@ class ReportsControllerTest < ActionDispatch::IntegrationTest
     )
 
     assert_response :ok
-    # Should show flash message about invalid date range
-    assert flash[:alert].present?, "Flash alert should be present"
-    assert_match /End date cannot be before start date/, flash[:alert]
-    # Verify the response body contains the swapped date range in the correct order
-    assert_includes @response.body, end_date.strftime("%b %-d, %Y")
-    assert_includes @response.body, start_date.strftime("%b %-d, %Y")
+    assert_equal I18n.t("reports.invalid_date_range"), flash[:alert]
+    assert_includes @response.body, end_date.strftime("%b %Y")
+    assert_includes @response.body, start_date.strftime("%b %Y")
   end
 
   test "spending patterns returns data when expense transactions exist" do
     # Create expense category
     expense_category = @family.categories.create!(
-      name: "Test Groceries",
-      classification: "expense"
+      name: "Test Groceries"
     )
 
     # Create account
@@ -154,7 +190,41 @@ class ReportsControllerTest < ActionDispatch::IntegrationTest
     assert_response :ok
 
     # Verify spending patterns shows data (not the "no data" message)
-    assert_select ".text-center.py-8.text-tertiary", { text: /No spending data/, count: 0 }, "Should not show 'No spending data' message when transactions exist"
+    assert_select ".text-center.py-8.text-subdued", { text: /No spending data/, count: 0 }, "Should not show 'No spending data' message when transactions exist"
+  end
+
+  test "index avoids residual category lazy loads" do
+    account = accounts(:depository)
+
+    4.times do |idx|
+      parent = @family.categories.create!(
+        name: "Reports Parent #{idx}",
+        color: "#000000",
+        lucide_icon: "folder"
+      )
+      child = @family.categories.create!(
+        name: "Reports Child #{idx}",
+        color: "#111111",
+        lucide_icon: "folder",
+        parent: parent
+      )
+      entry = account.entries.create!(
+        name: "Reports transaction #{idx}",
+        date: Date.current,
+        amount: 10 + idx,
+        currency: "USD",
+        entryable: Transaction.new(
+          category: child,
+          kind: "standard"
+        )
+      )
+      assert entry.persisted?
+    end
+
+    queries = capture_sql_queries { get reports_path(period_type: :monthly) }
+
+    assert_response :ok
+    assert_empty queries.grep(/SELECT "categories"\.\* FROM "categories" WHERE "categories"\."id" = \$1 LIMIT \$2/)
   end
 
   test "export transactions with API key authentication" do
@@ -175,6 +245,79 @@ class ReportsControllerTest < ActionDispatch::IntegrationTest
     assert_response :ok
     assert_equal "text/csv", @response.media_type
     assert_match /Category/, @response.body
+  end
+
+  test "export transactions with API key does not inherit web session impersonation" do
+    support_user = users(:sure_support_staff)
+    support_user.api_keys.active.destroy_all
+    token_value = ApiKey.generate_secure_key
+    export_credential = support_user.api_keys.build(
+      name: "Support Export Credential",
+      scopes: [ "read" ],
+      source: "web"
+    )
+    export_credential.key = token_value
+    export_credential.save!
+
+    impersonation_session = impersonation_sessions(:in_progress)
+    impersonated_user = impersonation_session.impersonated
+    leaked_category = impersonated_user.family.categories.create!(
+      name: "Impersonated Export Leak Probe"
+    )
+    impersonated_account = impersonated_user.finance_accounts.first
+    assert_not_nil impersonated_account, "Test setup failed: impersonated user has no finance account"
+
+    create_transaction(
+      account: impersonated_account,
+      name: "Impersonated export leak probe",
+      date: Date.current,
+      amount: 123.45,
+      category: leaked_category
+    )
+
+    support_user.sessions.destroy_all
+    support_user.sessions.create!(
+      user_agent: "Browser session",
+      ip_address: "127.0.0.1",
+      active_impersonator_session: impersonation_session
+    )
+
+    get export_transactions_reports_path(
+      format: :csv,
+      period_type: :ytd,
+      start_date: Date.current.beginning_of_year,
+      end_date: Date.current,
+      api_key: token_value
+    )
+
+    assert_response :ok
+    assert_equal "text/csv", @response.media_type
+    assert_no_match /Impersonated Export Leak Probe/, @response.body
+  end
+
+  test "export transactions with API key rejects deactivated user" do
+    user = users(:family_admin)
+    user.api_keys.active.destroy_all
+    token_value = ApiKey.generate_secure_key
+    export_access = user.api_keys.build(
+      name: "Inactive User Export Credential",
+      scopes: [ "read" ],
+      source: "web"
+    )
+    export_access.key = token_value
+    export_access.save!
+    user.update_column(:active, false)
+
+    get export_transactions_reports_path(
+      format: :csv,
+      period_type: :ytd,
+      api_key: token_value
+    )
+
+    assert_response :unauthorized
+    assert_match /Invalid or expired API key/, @response.body
+  ensure
+    user&.update_column(:active, true)
   end
 
   test "export transactions with invalid API key" do
@@ -220,5 +363,121 @@ class ReportsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "text/csv", @response.media_type
     # Verify the CSV content is generated (should not crash)
     assert_not_nil @response.body
+  end
+
+  test "index groups transactions by parent and subcategories" do
+    # Create parent category with subcategories
+    parent_category = @family.categories.create!(name: "Entertainment", color: "#FF5733")
+    subcategory_movies = @family.categories.create!(name: "Movies", parent: parent_category, color: "#33FF57")
+    subcategory_games = @family.categories.create!(name: "Games", parent: parent_category, color: "#5733FF")
+
+    # Create transactions using helper
+    create_transaction(account: @family.accounts.first, name: "Cinema ticket", amount: 15, category: subcategory_movies)
+    create_transaction(account: @family.accounts.first, name: "Video game", amount: 60, category: subcategory_games)
+
+    get reports_path(period_type: :monthly)
+    assert_response :ok
+
+    # Parent category
+    assert_select "tr[data-category='category-#{parent_category.id}']", text: /^Entertainment/
+
+    # Subcategories
+    assert_select "tr[data-category='category-#{subcategory_movies.id}']", text: /^Movies/
+    assert_select "tr[data-category='category-#{subcategory_games.id}']", text: /^Games/
+  end
+
+  test "monthly period navigation shows previous month link" do
+    get reports_path(period_type: :monthly)
+    assert_response :ok
+
+    prev_start = Date.current.beginning_of_month - 1.month
+    prev_end = prev_start.end_of_month
+    assert_select "a[href=?]", reports_path(period_type: :monthly, start_date: prev_start, end_date: prev_end)
+  end
+
+  test "monthly period navigation disables next arrow on current month" do
+    get reports_path(period_type: :monthly)
+    assert_response :ok
+
+    assert_select "button[disabled][aria-label=?]", I18n.t("reports.index.next_period")
+  end
+
+  test "monthly period navigation shows next month link on past month" do
+    past_start = Date.current.beginning_of_month - 2.months
+    past_end = past_start.end_of_month
+    get reports_path(period_type: :monthly, start_date: past_start, end_date: past_end)
+    assert_response :ok
+
+    next_start = past_start + 1.month
+    next_end = next_start.end_of_month
+    assert_select "a[href=?]", reports_path(period_type: :monthly, start_date: next_start, end_date: next_end)
+  end
+
+  test "last 6 months next window extends to current month end when crossing boundary" do
+    start_date = Date.current.beginning_of_month - 12.months
+    end_date = start_date + 6.months - 1.day
+
+    get reports_path(period_type: :last_6_months, start_date: start_date, end_date: end_date)
+    assert_response :ok
+
+    candidate_start = start_date.beginning_of_month + 6.months
+    if candidate_start + 6.months >= Date.current.beginning_of_month
+      expected_next_end   = Date.current.end_of_month
+      expected_next_start = (expected_next_end + 1.day - 6.months).beginning_of_month
+    else
+      expected_next_start = candidate_start
+      expected_next_end   = expected_next_start + 6.months - 1.day
+    end
+
+    assert_select "a[href=?]",
+      reports_path(period_type: :last_6_months, start_date: expected_next_start, end_date: expected_next_end)
+  end
+
+  test "quarterly period navigation shows previous and next quarter links" do
+    get reports_path(period_type: :quarterly)
+    assert_response :ok
+
+    prev_start = (Date.current.beginning_of_quarter - 1.day).beginning_of_quarter
+    prev_end = prev_start.end_of_quarter
+    assert_select "a[href=?]", reports_path(period_type: :quarterly, start_date: prev_start, end_date: prev_end)
+
+    # Also verify a past quarter shows an enabled next-quarter link
+    get reports_path(period_type: :quarterly, start_date: prev_start, end_date: prev_end)
+    assert_response :ok
+
+    next_start = prev_start.next_quarter.beginning_of_quarter
+    next_end   = next_start.end_of_quarter
+    assert_select "a[href=?]", reports_path(period_type: :quarterly, start_date: next_start, end_date: next_end)
+  end
+
+  test "custom period hides period display" do
+    get reports_path(
+      period_type: :custom,
+      start_date: 1.month.ago.to_date,
+      end_date: Date.current
+    )
+    assert_response :ok
+
+    prev_start = 1.month.ago.to_date.beginning_of_month - 1.month
+    next_start = 1.month.ago.to_date.beginning_of_month + 1.month
+    assert_select "a[href*=?]", "start_date=#{prev_start}", count: 0
+    assert_select "a[href*=?]", "start_date=#{next_start}", count: 0
+  end
+
+  test "ytd period navigation shows previous year link" do
+    get reports_path(period_type: :ytd)
+    assert_response :ok
+
+    prev_year  = Date.current.year - 1
+    prev_start = Date.new(prev_year, 1, 1)
+    prev_end   = Date.new(prev_year, 12, 31)
+    assert_select "a[href=?]", reports_path(period_type: :ytd, start_date: prev_start, end_date: prev_end)
+  end
+
+  test "ytd period navigation disables next arrow on current year" do
+    get reports_path(period_type: :ytd)
+    assert_response :ok
+
+    assert_select "button[disabled][aria-label=?]", I18n.t("reports.index.next_period")
   end
 end

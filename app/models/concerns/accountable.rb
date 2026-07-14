@@ -31,11 +31,17 @@ module Accountable
     end
 
     # Given a subtype, look up the label for this accountable type
+    # Uses i18n with fallback to hardcoded SUBTYPES values
     def subtype_label_for(subtype, format: :short)
       return nil if subtype.nil?
 
       label_type = format == :long ? :long : :short
-      self::SUBTYPES[subtype]&.fetch(label_type, nil)
+      fallback = self::SUBTYPES.dig(subtype, label_type)
+
+      I18n.t(
+        "#{name.underscore.pluralize}.subtypes.#{subtype}.#{label_type}",
+        default: fallback
+      )
     end
 
     # Convenience method for getting the short label
@@ -52,20 +58,51 @@ module Accountable
       classification == "asset" ? "up" : "down"
     end
 
-    def display_name
-      self.name.pluralize.titleize
+    def singular_display_name
+      I18n.t("accounts.types.#{name.underscore}", default: legacy_singular_display_name)
     end
 
-    def balance_money(family)
-      family.accounts
-            .active
-            .joins(sanitize_sql_array([
-              "LEFT JOIN exchange_rates ON exchange_rates.date = :current_date AND accounts.currency = exchange_rates.from_currency AND exchange_rates.to_currency = :family_currency",
-              { current_date: Date.current.to_s, family_currency: family.currency }
-            ]))
-            .where(accountable_type: self.name)
-            .sum("accounts.balance * COALESCE(exchange_rates.rate, 1)")
+    def display_name
+      I18n.t("accounts.types_plural.#{name.underscore}", default: -> { legacy_display_name })
     end
+
+    def legacy_display_name
+      return singular_display_name if name.in?([ "Depository", "Crypto" ])
+
+      singular_display_name.pluralize
+    end
+
+    def legacy_singular_display_name
+      case name
+      when "Depository"
+        "Cash"
+      when "Crypto"
+        "Crypto"
+      else
+        name.underscore.humanize
+      end
+    end
+
+    # Sums the balances of all active accounts of this type, converting foreign currencies to the family's currency.
+    # @return [BigDecimal] total balance in the family's currency
+    def balance_money(family)
+      accounts = family.accounts.active.where(accountable_type: self.name).to_a
+
+      foreign_currencies = accounts.filter_map { |a| a.currency if a.currency != family.currency }
+      rates = ExchangeRate.rates_for(foreign_currencies, to: family.currency, date: Date.current)
+
+      accounts.sum(BigDecimal(0)) { |account|
+        if account.currency == family.currency
+          account.balance
+        else
+          account.balance * (rates[account.currency] || 1)
+        end
+      }
+    end
+  end
+
+  def singular_display_name
+    self.class.singular_display_name
   end
 
   def display_name

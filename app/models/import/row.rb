@@ -1,5 +1,5 @@
 class Import::Row < ApplicationRecord
-  belongs_to :import
+  belongs_to :import, counter_cache: true
 
   validates :amount, numericality: true, allow_blank: true
   validates :currency, presence: true
@@ -8,13 +8,13 @@ class Import::Row < ApplicationRecord
   validate :required_columns
   validate :currency_is_valid
 
-  scope :ordered, -> { order(:id) }
+  scope :ordered, -> { order(:source_row_number, :id) }
 
   def tags_list
     if tags.blank?
       [ "" ]
     else
-      tags.split("|").map(&:strip)
+      split_tags(tags).map(&:strip)
     end
   end
 
@@ -37,6 +37,58 @@ class Import::Row < ApplicationRecord
   end
 
   private
+    # Supports historical comma-delimited exports and pipe-delimited templates.
+    # Backslash escapes comma, pipe, and backslash so tag names can contain either delimiter.
+    def split_tags(value)
+      split_escaped_tags(value, tag_delimiter_for(value))
+    end
+
+    def tag_delimiter_for(value)
+      return "," if unescaped_delimiter?(value, ",")
+      return "|" if unescaped_delimiter?(value, "|")
+
+      ","
+    end
+
+    def unescaped_delimiter?(value, delimiter)
+      escaping = false
+
+      value.each_char do |char|
+        if escaping
+          escaping = false
+        elsif char == "\\"
+          escaping = true
+        elsif char == delimiter
+          return true
+        end
+      end
+
+      false
+    end
+
+    def split_escaped_tags(value, delimiter)
+      tag_names = []
+      current = +""
+      escaping = false
+
+      value.each_char do |char|
+        if escaping
+          current << (char.in?([ delimiter, ",", "|", "\\" ]) ? char : "\\#{char}")
+          escaping = false
+        elsif char == "\\"
+          escaping = true
+        elsif char == delimiter
+          tag_names << current
+          current = +""
+        else
+          current << char
+        end
+      end
+
+      current << "\\" if escaping
+      tag_names << current
+    end
+
     # In the Sure system, positive quantities == "inflows"
     def apply_trade_signage_convention(value)
       value * (import.signage_convention == "inflows_positive" ? 1 : -1)
@@ -47,12 +99,27 @@ class Import::Row < ApplicationRecord
       if import.amount_type_strategy == "signed_amount"
         value * (import.signage_convention == "inflows_positive" ? -1 : 1)
       elsif import.amount_type_strategy == "custom_column"
-        inflow_value = import.amount_type_inflow_value
+        legacy_identifier = import.amount_type_inflow_value
+        selected_identifier =
+          if import.amount_type_identifier_value.present?
+            import.amount_type_identifier_value
+          else
+            legacy_identifier
+          end
 
-        if entity_type == inflow_value
-          value * -1
+        inflow_treatment =
+          if import.amount_type_inflow_value.in?(%w[inflows_positive inflows_negative])
+            import.amount_type_inflow_value
+          elsif import.signage_convention.in?(%w[inflows_positive inflows_negative])
+            import.signage_convention
+          else
+            "inflows_positive"
+          end
+
+        if entity_type == selected_identifier
+          value * (inflow_treatment == "inflows_positive" ? -1 : 1)
         else
-          value
+          value * (inflow_treatment == "inflows_positive" ? 1 : -1)
         end
       else
         raise "Unknown amount type strategy for import: #{import.amount_type_strategy}"

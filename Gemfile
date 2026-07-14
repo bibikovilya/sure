@@ -3,21 +3,21 @@ source "https://rubygems.org"
 ruby file: ".ruby-version"
 
 # Rails
-gem "rails", "~> 7.2.2"
+gem "rails", "~> 8.1.0"
 
 # Drivers
 gem "pg", "~> 1.5"
 gem "redis", "~> 5.4"
 
 # Deployment
-gem "puma", ">= 5.0"
+gem "puma", ">= 7.2.1"
 gem "bootsnap", require: false
 
 # Assets
 gem "importmap-rails"
 gem "propshaft"
 gem "tailwindcss-rails"
-gem "lucide-rails", github: "maybe-finance/lucide-rails"
+gem "lucide-rails"
 
 # Hotwire + UI
 gem "stimulus-rails"
@@ -31,6 +31,7 @@ gem "lookbook", "2.3.11"
 gem "hotwire_combobox"
 
 # Background Jobs
+gem "connection_pool", "~> 2.5" # pin to 2.x; 3.0 breaks sidekiq 8.x
 gem "sidekiq"
 gem "sidekiq-cron"
 gem "sidekiq-unique-jobs"
@@ -43,10 +44,15 @@ gem "sentry-rails"
 gem "sentry-sidekiq"
 gem "posthog-ruby"
 gem "logtail-rails"
-gem "skylight", groups: [ :production ]
+if ENV["SKYLIGHT_ENABLED"] == "true"
+  gem "skylight", group: :development, require: false
+else
+  gem "skylight", group: :production
+end
 
 # Active Storage
 gem "aws-sdk-s3", "~> 1.208.0", require: false
+gem "google-cloud-storage", "~> 1.59", require: false
 gem "image_processing", ">= 1.2"
 
 # Other
@@ -59,30 +65,38 @@ gem "countries"
 # OAuth & API Security
 gem "doorkeeper"
 gem "rack-attack", "~> 6.6"
+gem "rack-cors"
+gem "pundit"
 gem "faraday"
 gem "faraday-retry"
 gem "faraday-multipart"
 gem "inline_svg"
 gem "octokit"
 gem "pagy"
+gem "rails-i18n"
 gem "rails-settings-cached"
 gem "tzinfo-data", platforms: %i[windows jruby]
 gem "csv"
+gem "rchardet" # Character encoding detection
 gem "redcarpet"
 gem "stripe"
 gem "plaid"
+gem "snaptrade", "~> 2.0"
 gem "httparty"
 gem "rotp", "~> 6.3"
 gem "rqrcode", "~> 3.0"
+gem "webauthn", "~> 3.4"
 gem "activerecord-import"
 gem "rubyzip", "~> 2.3"
+gem "pdf-reader", "~> 2.12"
 
-# OpenID Connect & OAuth authentication
+# OpenID Connect, OAuth & SAML authentication
 gem "omniauth", "~> 2.1"
-gem "omniauth-rails_csrf_protection"
+gem "omniauth-rails_csrf_protection", ">= 2.0"
 gem "omniauth_openid_connect"
 gem "omniauth-google-oauth2"
 gem "omniauth-github"
+gem "omniauth-saml", "~> 2.1"
 
 # State machines
 gem "aasm"
@@ -90,6 +104,7 @@ gem "after_commit_everywhere", "~> 1.0"
 
 # AI
 gem "ruby-openai"
+gem "anthropic", "~> 1.0"
 gem "langfuse-ruby", "~> 0.1.4", require: "langfuse"
 
 # Web scraping
@@ -120,6 +135,13 @@ group :development do
   gem "foreman"
 end
 
+group :development, :test do
+  gem "rspec-rails"
+  gem "rswag-api"
+  gem "rswag-specs"
+  gem "rswag-ui"
+end
+
 group :test do
   gem "capybara"
   gem "selenium-webdriver"
@@ -128,8 +150,4 @@ group :test do
   gem "webmock"
   gem "climate_control"
   gem "simplecov", require: false
-  gem "rspec-rails"
-  gem "rswag-api"
-  gem "rswag-specs"
-  gem "rswag-ui"
 end

@@ -1,12 +1,31 @@
 # frozen_string_literal: true
 
 class Rack::Attack
-  # Enable Rack::Attack
+  # Enable Rack::Attack only in production and staging (disable in test/development to avoid rate-limit flakiness)
   enabled = Rails.env.production? || Rails.env.staging?
+  self.enabled = enabled
 
   # Throttle requests to the OAuth token endpoint
   throttle("oauth/token", limit: 10, period: 1.minute) do |request|
     request.ip if request.path == "/oauth/token"
+  end
+
+  throttle("oauth/register", limit: 10, period: 1.minute) do |request|
+    request.ip if request.post? && request.path == "/register"
+  end
+
+  # Throttle unauthenticated WebAuthn MFA ceremonies similarly to sign-in
+  # endpoints; registration remains behind normal application authentication.
+  throttle("mfa/webauthn", limit: 10, period: 1.minute) do |request|
+    if request.post? && request.path.in?(%w[/mfa/webauthn_options /mfa/verify_webauthn])
+      request.ip
+    end
+  end
+
+  # Throttle admin endpoints to prevent brute-force attacks
+  # More restrictive than general API limits since admin access is sensitive
+  throttle("admin/ip", limit: 10, period: 1.minute) do |request|
+    request.ip if request.path.start_with?("/admin/")
   end
 
   # Determine limits based on self-hosted mode
@@ -18,7 +37,7 @@ class Rack::Attack
       # Extract access token from Authorization header
       auth_header = request.get_header("HTTP_AUTHORIZATION")
       if auth_header&.start_with?("Bearer ")
-        token = auth_header.split(" ").last
+        token = auth_header.delete_prefix("Bearer ").strip # pipelock:ignore
         "api_token:#{Digest::SHA256.hexdigest(token)}"
       else
         # Fall back to IP-based limiting for unauthenticated requests

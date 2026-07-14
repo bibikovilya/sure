@@ -56,7 +56,7 @@ class Assistant::Function
     end
 
     def family_account_names
-      @family_account_names ||= family.accounts.visible.pluck(:name)
+      @family_account_names ||= user.accessible_accounts.visible.pluck(:name)
     end
 
     def family_category_names
@@ -77,6 +77,10 @@ class Assistant::Function
 
     def family
       user.family
+    end
+
+    def valid_uuid?(str)
+      UuidFormat.valid?(str)
     end
 
     # To save tokens, we provide the AI metadata about the series and a flat array of

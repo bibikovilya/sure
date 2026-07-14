@@ -6,28 +6,20 @@ class Family::SyncCompleteEvent
   end
 
   def broadcast
-    # Dashboard partials can occasionally raise when rendered from background jobs
-    # (e.g., if intermediate series values are nil during a sync). Make broadcasts
-    # resilient so a post-sync UI refresh never causes the overall sync to report an error.
-    begin
-      family.broadcast_replace(
-        target: "balance-sheet",
-        partial: "pages/dashboard/balance_sheet",
-        locals: { balance_sheet: family.balance_sheet }
-      )
-    rescue => e
-      Rails.logger.error("Family::SyncCompleteEvent balance_sheet broadcast failed: #{e.message}\n#{e.backtrace&.join("\n")}")
-    end
-
-    begin
-      family.broadcast_replace(
-        target: "net-worth-chart",
-        partial: "pages/dashboard/net_worth_chart",
-        locals: { balance_sheet: family.balance_sheet, period: Period.last_30_days }
-      )
-    rescue => e
-      Rails.logger.error("Family::SyncCompleteEvent net_worth_chart broadcast failed: #{e.message}\n#{e.backtrace&.join("\n")}")
-    end
+    # Replace the #sync-toast slot with a lightweight toast instead of a full
+    # page refresh.  The sync-toast Stimulus controller handles three cases:
+    #   - User is idle         → morph-refreshes after a short delay
+    #   - User is mid-form     → toast stays visible; user clicks "Refresh"
+    #   - A modal is open      → toast defers until the dialog closes
+    #
+    # This avoids wiping in-progress form state when a background sync fires.
+    # The partial contains no user-scoped data (Current.user is nil here), so
+    # each browser re-fetches the page on its own authenticated request.
+    family.broadcast_replace_to(
+      family,
+      target: "sync-toast",
+      partial: "shared/notifications/sync_toast"
+    )
 
     # Schedule recurring transaction pattern identification (debounced to run after all syncs complete)
     begin

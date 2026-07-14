@@ -1,5 +1,6 @@
 import { Controller } from "@hotwired/stimulus";
 import * as d3 from "d3";
+import { CHART_TOOLTIP_CLASSES } from "utils/chart_tooltip";
 
 const parseLocalDate = d3.timeParse("%Y-%m-%d");
 
@@ -110,7 +111,7 @@ export default class extends Controller {
       .attr("cx", this._d3InitialContainerWidth / 2)
       .attr("cy", this._d3InitialContainerHeight / 2)
       .attr("r", 4)
-      .attr("class", "fg-subdued")
+      .attr("class", "text-subdued")
       .style("fill", "currentColor");
   }
 
@@ -139,7 +140,18 @@ export default class extends Controller {
       .attr("d", this._d3Line)
       .attr("stroke-linejoin", "round")
       .attr("stroke-linecap", "round")
-      .attr("stroke-width", this.strokeWidthValue);
+      // A flat series (no variation across the period — a single valuation or an
+      // unchanged balance) otherwise renders as a full-bleed near-black rule
+      // bisecting the hero card. Draw it as a faint hairline so it reads as
+      // "no change", consistent across light and dark (#2137).
+      .attr("stroke-width", this._isFlatSeries ? 1 : this.strokeWidthValue)
+      .attr("stroke-opacity", this._isFlatSeries ? 0.4 : 1);
+  }
+
+  get _isFlatSeries() {
+    const min = d3.min(this._normalDataPoints, this._getDatumValue);
+    const max = d3.max(this._normalDataPoints, this._getDatumValue);
+    return min === max;
   }
 
   _installTrendlineSplit() {
@@ -220,7 +232,7 @@ export default class extends Controller {
     // Style ticks
     this._d3Group
       .selectAll(".tick text")
-      .attr("class", "fg-gray")
+      .attr("class", "text-secondary")
       .style("font-size", "12px")
       .style("font-weight", "500")
       .attr("text-anchor", "middle")
@@ -287,10 +299,8 @@ export default class extends Controller {
     this._d3Tooltip = d3
       .select(`#${this.element.id}`)
       .append("div")
-      .attr(
-        "class",
-        "bg-container text-sm font-sans absolute p-2 border border-secondary rounded-lg pointer-events-none opacity-0",
-      );
+      // Shared visual contract + this chart's initial-hidden / positioning classes.
+      .attr("class", `${CHART_TOOLTIP_CLASSES} opacity-0 top-0`);
   }
 
   _trackMouseForShowingTooltip() {
@@ -334,7 +344,7 @@ export default class extends Controller {
         // Guideline
         this._d3Group
           .append("line")
-          .attr("class", "guideline fg-subdued")
+          .attr("class", "guideline text-subdued")
           .attr("x1", this._d3XScale(d.date))
           .attr("y1", 0)
           .attr("x2", this._d3XScale(d.date))
@@ -386,11 +396,11 @@ export default class extends Controller {
 
   _tooltipTemplate(datum) {
     return `
-      <div style="margin-bottom: 4px; color: var(--color-gray-500);">
+      <div class="text-xs text-secondary mb-1">
         ${datum.date_formatted}
       </div>
       <div class="flex items-center gap-4">
-        <div class="flex items-center gap-2 text-primary">
+        <div class="flex items-center gap-2 text-primary font-medium tabular-nums">
           <div class="flex items-center justify-center h-4 w-4">
             ${this._getTrendIcon(datum)}
           </div>
@@ -401,7 +411,7 @@ export default class extends Controller {
           datum.trend.value === 0
             ? `<span class="w-20"></span>`
             : `
-          <span style="color: ${datum.trend.color};">
+          <span class="tabular-nums" style="color: ${datum.trend.color};">
             ${this._extractFormattedValue(datum.trend.value)} (${datum.trend.percent_formatted})
           </span>
         `

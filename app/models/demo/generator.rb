@@ -72,6 +72,9 @@ class Demo::Generator
         create_realistic_accounts!(family)
         create_realistic_transactions!(family)
         generate_budget_auto_fill!(family)
+
+        puts "🎯 Seeding goals..."
+        generate_goals!(family)
       end
 
       family.sync_later
@@ -93,12 +96,18 @@ class Demo::Generator
       puts "👥 Creating demo family..."
       family = create_family_and_users!("Demo Family", email, onboarded: true, subscribed: true)
 
+      puts "🔑 Creating monitoring API key..."
+      create_monitoring_api_key!(family)
+
       puts "📊 Creating realistic financial data..."
       create_realistic_categories!(family)
       create_realistic_accounts!(family)
       create_realistic_transactions!(family)
       # Auto-fill current-month budget based on recent spending averages
       generate_budget_auto_fill!(family)
+
+      puts "🎯 Seeding goals..."
+      generate_goals!(family)
 
       puts "✅ Realistic demo data loaded successfully!"
     end
@@ -168,7 +177,7 @@ class Demo::Generator
         onboarded_at: onboarded ? Time.current : nil
       )
 
-      # Member user
+      # Family member user
       family.users.create!(
         email: "partner_#{email}",
         first_name: "Eve",
@@ -181,50 +190,77 @@ class Demo::Generator
       family
     end
 
+    def create_monitoring_api_key!(family)
+      admin_user = family.users.find_by(role: "admin")
+      return unless admin_user
+
+      # Find existing key scoped to this admin user by the deterministic display_key value
+      existing_key = admin_user.api_keys.find_by(display_key: ApiKey::DEMO_MONITORING_KEY)
+
+      if existing_key
+        puts "  → Use existing monitoring API key"
+        return existing_key
+      end
+
+      # Revoke any existing user-created web API keys to keep demo access predictable.
+      # (the monitoring key uses the dedicated "monitoring" source and cannot be revoked)
+      admin_user.api_keys.active.visible.where(source: "web").find_each(&:revoke!)
+
+      api_key = admin_user.api_keys.create!(
+        name: "monitoring",
+        key: ApiKey::DEMO_MONITORING_KEY,
+        scopes: [ "read" ],
+        source: "monitoring"
+      )
+
+      puts "  → Created monitoring API key: #{ApiKey::DEMO_MONITORING_KEY}"
+      api_key
+    end
+
     def create_realistic_categories!(family)
       # Income categories (3 total)
-      @salary_cat = family.categories.create!(name: "Salary", color: "#10b981", classification: "income")
-      @freelance_cat = family.categories.create!(name: "Freelance", color: "#059669", classification: "income")
-      @investment_income_cat = family.categories.create!(name: "Investment Income", color: "#047857", classification: "income")
+      @salary_cat = family.categories.create!(name: "Salary", color: "#10b981")
+      @freelance_cat = family.categories.create!(name: "Freelance", color: "#059669")
+      @investment_income_cat = family.categories.create!(name: "Investment Income", color: "#047857")
 
       # Expense categories with subcategories (12 total)
-      @housing_cat = family.categories.create!(name: "Housing", color: "#dc2626", classification: "expense")
-      @rent_cat = family.categories.create!(name: "Rent/Mortgage", parent: @housing_cat, color: "#b91c1c", classification: "expense")
-      @utilities_cat = family.categories.create!(name: "Utilities", parent: @housing_cat, color: "#991b1b", classification: "expense")
+      @housing_cat = family.categories.create!(name: "Housing", color: "#dc2626")
+      @rent_cat = family.categories.create!(name: "Rent/Mortgage", parent: @housing_cat, color: "#b91c1c")
+      @utilities_cat = family.categories.create!(name: "Utilities", parent: @housing_cat, color: "#991b1b")
 
-      @food_cat = family.categories.create!(name: "Food & Dining", color: "#ea580c", classification: "expense")
-      @groceries_cat = family.categories.create!(name: "Groceries", parent: @food_cat, color: "#c2410c", classification: "expense")
-      @restaurants_cat = family.categories.create!(name: "Restaurants", parent: @food_cat, color: "#9a3412", classification: "expense")
-      @coffee_cat = family.categories.create!(name: "Coffee & Takeout", parent: @food_cat, color: "#7c2d12", classification: "expense")
+      @food_cat = family.categories.create!(name: "Food & Dining", color: "#ea580c")
+      @groceries_cat = family.categories.create!(name: "Groceries", parent: @food_cat, color: "#c2410c")
+      @restaurants_cat = family.categories.create!(name: "Restaurants", parent: @food_cat, color: "#9a3412")
+      @coffee_cat = family.categories.create!(name: "Coffee & Takeout", parent: @food_cat, color: "#7c2d12")
 
-      @transportation_cat = family.categories.create!(name: "Transportation", color: "#2563eb", classification: "expense")
-      @gas_cat = family.categories.create!(name: "Gas", parent: @transportation_cat, color: "#1d4ed8", classification: "expense")
-      @car_payment_cat = family.categories.create!(name: "Car Payment", parent: @transportation_cat, color: "#1e40af", classification: "expense")
+      @transportation_cat = family.categories.create!(name: "Transportation", color: "#2563eb")
+      @gas_cat = family.categories.create!(name: "Gas", parent: @transportation_cat, color: "#1d4ed8")
+      @car_payment_cat = family.categories.create!(name: "Car Payment", parent: @transportation_cat, color: "#1e40af")
 
-      @entertainment_cat = family.categories.create!(name: "Entertainment", color: "#7c3aed", classification: "expense")
-      @healthcare_cat = family.categories.create!(name: "Healthcare", color: "#db2777", classification: "expense")
-      @shopping_cat = family.categories.create!(name: "Shopping", color: "#059669", classification: "expense")
-      @travel_cat = family.categories.create!(name: "Travel", color: "#0891b2", classification: "expense")
-      @personal_care_cat = family.categories.create!(name: "Personal Care", color: "#be185d", classification: "expense")
+      @entertainment_cat = family.categories.create!(name: "Entertainment", color: "#7c3aed")
+      @healthcare_cat = family.categories.create!(name: "Healthcare", color: "#db2777")
+      @shopping_cat = family.categories.create!(name: "Shopping", color: "#059669")
+      @travel_cat = family.categories.create!(name: "Travel", color: "#0891b2")
+      @personal_care_cat = family.categories.create!(name: "Personal Care", color: "#be185d")
 
       # Additional high-level expense categories to reach 13 top-level items
-      @insurance_cat = family.categories.create!(name: "Insurance", color: "#6366f1", classification: "expense")
-      @misc_cat      = family.categories.create!(name: "Miscellaneous", color: "#6b7280", classification: "expense")
+      @insurance_cat = family.categories.create!(name: "Insurance", color: "#6366f1")
+      @misc_cat      = family.categories.create!(name: "Miscellaneous", color: "#6b7280")
 
       # Interest expense bucket
-      @interest_cat = family.categories.create!(name: "Loan Interest", color: "#475569", classification: "expense")
+      @interest_cat = family.categories.create!(name: "Loan Interest", color: "#475569")
     end
 
     def create_realistic_accounts!(family)
       # Checking accounts (USD)
-      @chase_checking = family.accounts.create!(accountable: Depository.new, name: "Chase Premier Checking", balance: 0, currency: "USD")
-      @ally_checking = family.accounts.create!(accountable: Depository.new, name: "Ally Online Checking", balance: 0, currency: "USD")
+      @chase_checking = family.accounts.create!(accountable: Depository.new(subtype: "checking"), name: "Chase Premier Checking", balance: 0, currency: "USD")
+      @ally_checking = family.accounts.create!(accountable: Depository.new(subtype: "checking"), name: "Ally Online Checking", balance: 0, currency: "USD")
 
       # Savings account (USD)
-      @marcus_savings = family.accounts.create!(accountable: Depository.new, name: "Marcus High-Yield Savings", balance: 0, currency: "USD")
+      @marcus_savings = family.accounts.create!(accountable: Depository.new(subtype: "savings"), name: "Marcus High-Yield Savings", balance: 0, currency: "USD")
 
       # EUR checking (EUR)
-      @eu_checking = family.accounts.create!(accountable: Depository.new, name: "Deutsche Bank EUR Account", balance: 0, currency: "EUR")
+      @eu_checking = family.accounts.create!(accountable: Depository.new(subtype: "checking"), name: "Deutsche Bank EUR Account", balance: 0, currency: "EUR")
 
       # Credit cards (USD)
       @amex_gold = family.accounts.create!(accountable: CreditCard.new, name: "Amex Gold Card", balance: 0, currency: "USD")
@@ -324,11 +360,11 @@ class Demo::Generator
       analysis_start  = (current_month - 3.months).beginning_of_month
       analysis_period = analysis_start..(current_month - 1.day)
 
-      # Fetch expense transactions in the analysis period
+      # Fetch expense transactions in the analysis period (positive amounts = expenses)
       txns = Entry.joins("INNER JOIN transactions ON transactions.id = entries.entryable_id")
                   .joins("INNER JOIN categories ON categories.id = transactions.category_id")
                   .where(entries: { entryable_type: "Transaction", date: analysis_period })
-                  .where(categories: { classification: "expense" })
+                  .where("entries.amount > 0")
 
       spend_per_cat = txns.group("categories.id").sum("entries.amount")
 
@@ -1243,5 +1279,173 @@ class Demo::Generator
       )
 
       puts "   ✅ Set property and vehicle valuations"
+    end
+
+    def generate_goals!(family)
+      # Order so primary/secondary picks stay stable across reseeds — the
+      # state-coverage matrix below routes goals to specific accounts to
+      # surface every status branch, so DB return order can't pick.
+      depository_accounts = family.accounts
+                                  .where(accountable_type: "Depository")
+                                  .visible
+                                  .order(:created_at, :id)
+                                  .to_a
+      return if depository_accounts.empty?
+
+      currency = depository_accounts.first.currency
+      eligible = depository_accounts.select { |a| a.currency == currency }
+      primary = eligible.first
+      secondary = (eligible - [ primary ]).first || primary
+
+      # Demo coverage matrix. The demo seeds a heavy primary checking
+      # balance (~$150k) plus a smaller secondary account (~$10k). To
+      # surface every goal state we deliberately route goals to different
+      # account pools so progress lands above or below the target:
+      #
+      #   AASM states:    active, paused, completed, archived
+      #   Computed status (on active goals):
+      #                   :reached, :on_track, :behind, :no_target_date
+      #   Edge surfaces:  past-due target_date ("was due"), open pledge
+      #                   banner, matched pledge ("last pledge matched")
+      goals = [
+        # active · behind — secondary account only, target above its balance
+        {
+          name: "Vacation in Italy",
+          target: 20_000,
+          target_date: 4.months.from_now.to_date,
+          accounts: [ secondary ],
+          pledges: [
+            { account: secondary, amount: 250, kind: "transfer", status: "open", expires_at: 5.days.from_now }
+          ]
+        },
+        # active · reached — primary balance comfortably above target
+        {
+          name: "Wedding fund",
+          target: 2_400,
+          target_date: 12.months.from_now.to_date,
+          accounts: [ primary ]
+        },
+        # active · no_target_date — secondary so progress doesn't auto-cap at 100%
+        {
+          name: "Emergency fund",
+          target: 30_000,
+          target_date: nil,
+          accounts: [ secondary ]
+        },
+        # active · behind big — combined pools still well short of the target
+        {
+          name: "House downpayment",
+          target: 500_000,
+          target_date: 24.months.from_now.to_date,
+          accounts: eligible.first(2),
+          pledges: [
+            { account: primary, amount: 2_000, kind: "transfer", status: "open", expires_at: 4.days.from_now }
+          ]
+        },
+        # active · on_track — primary balance close to target, long horizon makes
+        # the required monthly rate small enough for the demo's pace to cover
+        {
+          name: "Long-term portfolio",
+          target: 200_000,
+          target_date: 60.months.from_now.to_date,
+          accounts: [ primary ]
+        },
+        # active · past-due — exercises "was due" header copy + the
+        # months_remaining = 0 branch in monthly_target_amount
+        {
+          name: "Tax prep buffer",
+          target: 1_200,
+          target_date: 2.months.ago.to_date,
+          accounts: [ secondary ]
+        },
+        # AASM paused
+        {
+          name: "Sabbatical",
+          target: 15_000,
+          target_date: 18.months.from_now.to_date,
+          state: "paused",
+          accounts: [ primary ]
+        },
+        # AASM archived
+        {
+          name: "Old laptop fund",
+          target: 1_500,
+          target_date: 12.months.ago.to_date,
+          state: "archived",
+          accounts: [ primary ]
+        },
+        # AASM completed
+        {
+          name: "Paid-off car",
+          target: 8_000,
+          target_date: 6.months.ago.to_date,
+          state: "completed",
+          accounts: [ primary ]
+        }
+      ]
+
+      wedding_goal = nil
+      goals.each do |goal_spec|
+        goal = family.goals.new(
+          name: goal_spec[:name],
+          target_amount: goal_spec[:target],
+          target_date: goal_spec[:target_date],
+          currency: currency,
+          color: Goal::COLORS.sample,
+          state: goal_spec[:state] || "active"
+        )
+        goal_spec[:accounts].uniq.each { |a| goal.goal_accounts.build(account: a) }
+        goal.save!
+        wedding_goal = goal if goal_spec[:name] == "Wedding fund"
+
+        Array(goal_spec[:pledges]).each do |pledge_spec|
+          goal.goal_pledges.create!(
+            account: pledge_spec[:account] || goal.linked_accounts.first,
+            amount: pledge_spec[:amount],
+            currency: currency,
+            kind: pledge_spec[:kind] || "transfer",
+            status: pledge_spec[:status] || "open",
+            expires_at: pledge_spec[:expires_at] || 7.days.from_now
+          )
+        end
+      end
+
+      seed_matched_pledge_demo_for_wedding!(wedding_goal, currency, primary) if wedding_goal && primary
+
+      puts "   ✅ Seeded #{goals.size} goals"
+    end
+
+    # Bind one matched pledge on the Wedding fund to a real recent demo
+    # inflow Transaction. Surfaces the "Last pledge matched N days ago"
+    # header copy + exercises the partial-unique index on
+    # transactions.extra->'goal'->>'pledge_id'.
+    def seed_matched_pledge_demo_for_wedding!(wedding, currency, primary)
+      return unless wedding && primary
+
+      recent_inflow_entry = Entry
+        .joins("INNER JOIN transactions ON transactions.id = entries.entryable_id AND entries.entryable_type = 'Transaction'")
+        .where(account_id: primary.id, excluded: false)
+        .where("entries.amount < 0")
+        .where("entries.date >= ?", 30.days.ago.to_date)
+        .where("(transactions.extra -> 'goal' ->> 'pledge_id') IS NULL")
+        .order("entries.date DESC", "entries.id DESC")
+        .first
+
+      return unless recent_inflow_entry
+
+      pledge = wedding.goal_pledges.create!(
+        account: primary,
+        amount: recent_inflow_entry.amount.to_d.abs,
+        currency: currency,
+        kind: "transfer",
+        status: "matched",
+        matched_transaction_id: recent_inflow_entry.entryable_id,
+        expires_at: 7.days.ago
+      )
+
+      txn = recent_inflow_entry.entryable
+      new_extra = (txn.extra || {}).deep_dup
+      new_extra["goal"] = (new_extra["goal"] || {}).merge("pledge_id" => pledge.id)
+      txn.update!(extra: new_extra)
     end
 end

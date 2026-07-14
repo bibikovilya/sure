@@ -26,13 +26,13 @@ ro:
         rows_label: Rânduri
         unassigned_account: Trebuie să creezi un cont nou pentru rândurile neasignate?
       show:
-        account_mapping_description: Asignează toate conturile din fișierul tău importat conturilor existente din Maybe. Poți adăuga și conturi noi sau le poți lăsa necategorizate.
+        account_mapping_description: Asignează toate conturile din fișierul tău importat conturilor existente din %{product_name}. Poți adăuga și conturi noi sau le poți lăsa necategorizate.
         account_mapping_title: Asignează-ți conturile
-        account_type_mapping_description: Asignează toate tipurile de cont din fișierul tău importat celor din Maybe.
+        account_type_mapping_description: Asignează toate tipurile de cont din fișierul tău importat celor din %{product_name}.
         account_type_mapping_title: Asignează-ți tipurile de cont
-        category_mapping_description: Asignează toate categoriile din fișierul tău importat categoriilor existente din Maybe. Poți adăuga și categorii noi sau le poți lăsa necategorizate.
+        category_mapping_description: Asignează toate categoriile din fișierul tău importat categoriilor existente din %{product_name}. Poți adăuga și categorii noi sau le poți lăsa necategorizate.
         category_mapping_title: Asignează-ți categoriile
-        tag_mapping_description: Asignează toate etichetele din fișierul tău importat etichetelor existente din Maybe. Poți adăuga și etichete noi sau le poți lăsa necategorizate.
+        tag_mapping_description: Asignează toate etichetele din fișierul tău importat etichetelor existente din %{product_name}. Poți adăuga și etichete noi sau le poți lăsa necategorizate.
         tag_mapping_title: Asignează-ți etichetele
     uploads:
       show:
@@ -44,26 +44,30 @@ ro:
         instructions_5: Fără virgule, fără simboluri monetare și fără paranteze în numere.
         title: Importă-ți datele
   imports:
-    empty:
-      message: Nu există încă importuri.
-      new: Import nou
-    import:
-      complete: Finalizat
-      delete: Șterge
-      failed: Eșuat
-      in_progress: În curs
-      label: "%{type}: %{datetime}"
-      revert_failed: Anulare eșuată
-      reverting: Se anulează
-      uploading: Se procesează rândurile
-      view: Vezi
     index:
-      imports: Importuri
+      title: Importuri
       new: Import nou
-      title: Import/Export
-      exports: Exporturi
-      new_export: Export nou
-      no_exports: Nu există încă exporturi.
+    table:
+      title: Importuri
+      header:
+        date: Data
+        operation: Operațiune
+        status: Stare
+        actions: Acțiuni
+      row:
+        status:
+          in_progress: În curs
+          uploading: Se procesează rândurile
+          reverting: Se anulează
+          revert_failed: Anulare eșuată
+          complete: Finalizat
+          failed: Eșuat
+        actions:
+          revert: Reveni
+          confirm_revert: Aceasta operațiune va șterge tranzacțiile importate, dar veți putea în continuare să revizuiți și să reimportați datele în orice moment.
+          delete: Șterge
+          view: Vezi
+      empty: Nu există încă importuri.
     new:
       description: Poți importa manual diverse tipuri de date prin CSV sau poți folosi unul dintre șabloanele noastre de import, cum ar fi Mint.
       import_accounts: Importă conturi
@@ -76,3 +80,8 @@ ro:
     ready:
       description: Iată un rezumat al elementelor noi care vor fi adăugate contului tău odată ce vei publica acest import.
       title: Confirmă datele importate
+      summary_item_label: Element
+      summary_count_label: Număr
+      empty_summary: Nu s-au găsit înregistrări importabile în acest fișier. Fișierul poate fi gol sau liniile nu respectă formatul de export așteptat (fiecare linie trebuie să fie un obiect JSON cu cheile „type” și „data”, folosind tipuri acceptate de acest import).
+      publish_import: Publică importul
+      back_to_imports: Înapoi la importuri

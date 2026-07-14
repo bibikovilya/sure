@@ -2,6 +2,8 @@
 nb:
   layouts:
     application:
+      privacy_mode: Veksle personvernmodus
+      skip_to_main: Hopp til hovedinnhold
       nav:
         assistant: Assistent
         budgets: Budsjett
@@ -17,3 +19,7 @@ nb:
       footer:
         privacy_policy: Personvernerklæring
         terms_of_service: Vilkår for bruk
+    trial:
+      open_demo: Åpen demo
+      data_deleted_in_days: Data slettes om %{days} dager
+      contribute: Bidra

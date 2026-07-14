@@ -179,4 +179,67 @@ class RulesControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to rules_url
   end
+
+  test "index renders when rule has empty compound condition" do
+    malformed_rule = @user.family.rules.build(resource_type: "transaction")
+    malformed_rule.conditions.build(condition_type: "compound", operator: "and")
+    malformed_rule.actions.build(action_type: "exclude_transaction")
+    malformed_rule.save!
+
+    get rules_url
+
+    assert_response :success
+    assert_includes response.body, I18n.t("rules.no_condition")
+  end
+
+  test "index uses next valid condition when first compound condition is empty" do
+    rule = @user.family.rules.build(resource_type: "transaction")
+    rule.conditions.build(condition_type: "compound", operator: "and")
+    rule.conditions.build(condition_type: "transaction_name", operator: "like", value: "edge-case-name")
+    rule.actions.build(action_type: "exclude_transaction")
+    rule.save!
+
+    get rules_url
+
+    assert_response :success
+
+    assert_select "##{ActionView::RecordIdentifier.dom_id(rule)}" do
+      assert_select "span", text: /edge-case-name/
+      assert_select "span", text: /#{Regexp.escape(I18n.t("rules.no_condition"))}/, count: 0
+      assert_select "p", text: /and 1 more condition/, count: 0
+    end
+  end
+
+  test "index shows blocked count in recent runs summary" do
+    rule = rules(:one)
+    RuleRun.create!(
+      rule: rule,
+      execution_type: "manual",
+      status: "success",
+      transactions_queued: 10,
+      transactions_processed: 7,
+      transactions_modified: 4,
+      pending_jobs_count: 0,
+      executed_at: Time.current
+    )
+
+    get rules_url
+
+    assert_response :success
+    assert_select "th", text: /Queued\s+Processed\s+Modified\s+Blocked/
+    assert_select "td", text: "10 / 7 / 4 / 3"
+  end
+
+  test "should get confirm_all" do
+    get confirm_all_rules_url
+    assert_response :success
+  end
+
+  test "apply_all enqueues job and redirects" do
+    assert_enqueued_with(job: ApplyAllRulesJob) do
+      post apply_all_rules_url
+    end
+
+    assert_redirected_to rules_url
+  end
 end

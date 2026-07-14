@@ -19,8 +19,38 @@ run_security_health_checks:
   queue: "scheduled"
   description: "Runs security health checks to detect issues with security data"
 
-sync_all_accounts:
-  cron: "22 2 * * *" # every 24 hours at 2:22am
-  class: "SyncAllJob"
+sync_hourly:
+  cron: "0 * * * *" # every hour at the top of the hour
+  class: "SyncHourlyJob"
   queue: "scheduled"
-  description: "Syncs all accounts for all families"
+  description: "Syncs provider items that opt-in to hourly syncing"
+
+clean_data:
+  cron: "0 3 * * *" # daily at 3:00 AM
+  class: "DataCleanerJob"
+  queue: "scheduled"
+  description: "Cleans up old data (e.g., expired merchant associations, expired archived exports)"
+
+clean_debug_log_entries:
+  cron: "30 3 * * *" # daily at 3:30 AM
+  class: "DebugLogCleanupJob"
+  queue: "scheduled"
+  description: "Deletes debug log entries older than 90 days"
+
+clean_inactive_families:
+  cron: "0 4 * * *" # daily at 4:00 AM
+  class: "InactiveFamilyCleanerJob"
+  queue: "scheduled"
+  description: "Archives and destroys families that expired their trial without subscribing (managed mode only)"
+
+refresh_demo_family:
+  cron: "0 5 * * *" # daily at 5:00 AM UTC
+  class: "DemoFamilyRefreshJob"
+  queue: "scheduled"
+  description: "Refreshes demo family data and emails super admins with daily usage summary"
+
+sweep_expired_goal_pledges:
+  cron: "*/15 * * * *" # every 15 minutes
+  class: "SweepExpiredGoalPledgesJob"
+  queue: "scheduled"
+  description: "Marks goal pledges that passed their 7-day window as expired"

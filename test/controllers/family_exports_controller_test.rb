@@ -33,7 +33,7 @@ class FamilyExportsControllerTest < ActionDispatch::IntegrationTest
       post family_exports_path
     end
 
-    assert_redirected_to imports_path
+    assert_redirected_to family_exports_path
     assert_equal "Export started. You'll be able to download it shortly.", flash[:notice]
 
     export = @family.family_exports.last
@@ -67,7 +67,7 @@ class FamilyExportsControllerTest < ActionDispatch::IntegrationTest
     export = @family.family_exports.create!(status: "processing")
 
     get download_family_export_path(export)
-    assert_redirected_to imports_path
+    assert_redirected_to family_exports_path
     assert_equal "Export not ready for download", flash[:alert]
   end
 
@@ -78,7 +78,7 @@ class FamilyExportsControllerTest < ActionDispatch::IntegrationTest
       delete family_export_path(export)
     end
 
-    assert_redirected_to imports_path
+    assert_redirected_to family_exports_path
     assert_equal "Export deleted successfully", flash[:notice]
   end
 
@@ -95,7 +95,7 @@ class FamilyExportsControllerTest < ActionDispatch::IntegrationTest
       delete family_export_path(export)
     end
 
-    assert_redirected_to imports_path
+    assert_redirected_to family_exports_path
     assert_equal "Export deleted successfully", flash[:notice]
   end
 
@@ -112,7 +112,7 @@ class FamilyExportsControllerTest < ActionDispatch::IntegrationTest
       delete family_export_path(export)
     end
 
-    assert_redirected_to imports_path
+    assert_redirected_to family_exports_path
     assert_equal "Export deleted successfully", flash[:notice]
   end
 
@@ -138,6 +138,17 @@ class FamilyExportsControllerTest < ActionDispatch::IntegrationTest
     # Note: Active Storage purges files asynchronously with `dependent: :purge_later`
     # In tests, we can check that the attachment record is gone
     assert_not ActiveStorage::Attachment.exists?(file_id)
+  end
+
+  test "index responds to html with settings layout" do
+    get family_exports_path
+    assert_response :success
+    assert_select "title" # rendered with layout
+  end
+
+  test "index responds to turbo_stream without raising MissingTemplate" do
+    get family_exports_path, headers: { "Accept" => "text/vnd.turbo-stream.html" }
+    assert_redirected_to family_exports_path
   end
 
   test "non-admin cannot delete export" do
