@@ -19,6 +19,7 @@ class Account::MarketDataImporterTest < ActiveSupport::TestCase
 
     @exchange_rate_provider = mock("provider")
     @security_provider = mock("security_provider")
+    @provider = @security_provider
     Provider::Registry.any_instance
                       .stubs(:get_provider)
                       .with(:nbrb)
@@ -27,6 +28,9 @@ class Account::MarketDataImporterTest < ActiveSupport::TestCase
                       .stubs(:get_provider)
                       .with(:twelve_data)
                       .returns(@security_provider)
+
+    # Default stub: tests that care about specific exchange rate calls will use expects()
+    @exchange_rate_provider.stubs(:fetch_exchange_rates).returns(provider_success_response([]))
   end
 
   teardown do
@@ -98,9 +102,10 @@ class Account::MarketDataImporterTest < ActiveSupport::TestCase
     ExchangeRate.create!(from_currency: "CAD", to_currency: "EUR", date: existing_date, rate: 0.68)
     ExchangeRate.create!(from_currency: "EUR", to_currency: "CAD", date: existing_date, rate: 1.47)
 
-    expected_start_date = (existing_date + 1.day) - PROVIDER_BUFFER
+    expected_start_date = (existing_date + 1.day) - EXCHANGE_RATE_BUFFER
     end_date            = Date.current.in_time_zone("America/New_York").to_date
 
+    # Only forward pairs are fetched; inverse (USD→CAD, EUR→CAD) computed automatically
     @exchange_rate_provider.expects(:fetch_exchange_rates)
                            .with(from: "CAD",
                                  to: "USD",
@@ -111,30 +116,12 @@ class Account::MarketDataImporterTest < ActiveSupport::TestCase
                            ]))
 
     @exchange_rate_provider.expects(:fetch_exchange_rates)
-                           .with(from: "USD",
-                                 to: "CAD",
-                                 start_date: expected_start_date,
-                                 end_date: end_date)
-                           .returns(provider_success_response([
-                             OpenStruct.new(from: "USD", to: "CAD", date: existing_date, rate: 1.32)
-                           ]))
-
-    @exchange_rate_provider.expects(:fetch_exchange_rates)
                            .with(from: "CAD",
                                  to: "EUR",
                                  start_date: expected_start_date,
                                  end_date: end_date)
                            .returns(provider_success_response([
                              OpenStruct.new(from: "CAD", to: "EUR", date: existing_date, rate: 0.69)
-                           ]))
-
-    @exchange_rate_provider.expects(:fetch_exchange_rates)
-                           .with(from: "EUR",
-                                 to: "CAD",
-                                 start_date: expected_start_date,
-                                 end_date: end_date)
-                           .returns(provider_success_response([
-                             OpenStruct.new(from: "EUR", to: "CAD", date: existing_date, rate: 1.45)
                            ]))
 
     before = ExchangeRate.count

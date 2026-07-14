@@ -30,6 +30,7 @@ depository:
 
 depository_byn:
   family: dylan_family
+  owner: family_admin
   name: Local Account
   balance: 5000
   currency: BYN

@@ -226,6 +226,10 @@ GEM
       net-http (~> 0.5)
     faraday-retry (2.3.2)
       faraday (~> 2.0)
+    ferrum (0.17.1)
+      addressable (~> 2.5)
+      base64 (~> 0.2)
+      concurrent-ruby (~> 1.1)
     ffi (1.17.2-aarch64-linux-gnu)
     ffi (1.17.2-aarch64-linux-musl)
     ffi (1.17.2-arm-linux-gnu)
@@ -234,10 +238,6 @@ GEM
     ffi (1.17.2-x86_64-darwin)
     ffi (1.17.2-x86_64-linux-gnu)
     ffi (1.17.2-x86_64-linux-musl)
-    ferrum (0.17.1)
-      addressable (~> 2.5)
-      base64 (~> 0.2)
-      concurrent-ruby (~> 1.1)
     foreman (0.88.1)
     fugit (1.11.1)
       et-orbi (~> 1, >= 1.2.11)
@@ -845,6 +845,7 @@ GEM
       addressable (>= 2.8.0)
       crack (>= 0.3.2)
       hashdiff (>= 0.4.0, < 2.0.0)
+    webrick (1.9.2)
     websocket (1.2.11)
     websocket-driver (0.8.1)
       base64
@@ -964,9 +965,10 @@ DEPENDENCIES
   web-console
   webauthn (~> 3.4)
   webmock
+  webrick
 
 RUBY VERSION
-   ruby 3.4.9p82
+   ruby 3.4.7p58
 
 BUNDLED WITH
    2.6.7

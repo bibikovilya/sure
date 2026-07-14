@@ -109,6 +109,7 @@ gem "langfuse-ruby", "~> 0.1.4", require: "langfuse"
 
 # Web scraping
 gem "ferrum", "~> 0.17.1"
+gem "webrick"
 
 group :development, :test do
   gem "debug", platforms: %i[mri windows]

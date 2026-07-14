@@ -52,7 +52,8 @@ class AccountImportTest < ActiveSupport::TestCase
       name_col_label: "name",
       amount_col_label: "amount",
       currency_col_label: "currency",
-      opening_date_col_label: "opening_date"
+      date_col_label: "opening_date",
+      date_format: "%Y-%m-%d"
     )
 
     @import.generate_rows_from_csv

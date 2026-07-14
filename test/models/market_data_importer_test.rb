@@ -14,6 +14,9 @@ class MarketDataImporterTest < ActiveSupport::TestCase
     Trade.delete_all
     Holding.delete_all
     Security.delete_all
+    AccountShare.delete_all
+    GoalAccount.delete_all
+    GoalPledge.delete_all
     Account.delete_all
 
     ENV["EXCHANGE_RATE_PROVIDER"] = "nbrb"
