@@ -235,6 +235,40 @@ class PriorbankAccount::SyncerTest < ActiveSupport::TestCase
     @syncer.perform_sync(@sync)
   end
 
+  test "perform_sync stores CSV as AccountStatement in vault" do
+    assert_difference "AccountStatement.count", 1 do
+      @syncer.perform_sync(@sync)
+    end
+
+    statement = AccountStatement.last
+    assert_equal @account, statement.account
+    assert_equal @account.family, statement.family
+    assert_equal "text/csv", statement.content_type
+    assert statement.filename.include?("priorbank_BYN")
+    assert_equal "linked", statement.review_status
+  end
+
+  test "perform_sync skips duplicate statement without raising" do
+    @syncer.perform_sync(@sync)
+
+    second_sync = Sync.create!(syncable: @priorbank_account, data: { "csv_path" => FIXTURE_CSV_PATH })
+
+    assert_no_difference "AccountStatement.count" do
+      @syncer.perform_sync(second_sync)
+    end
+  end
+
+  test "perform_sync continues successfully even when statement vault fails" do
+    AccountStatement.stubs(:create_from_prepared_upload!).raises(StandardError.new("Storage error"))
+
+    assert_difference -> { Transaction.count } => 3 do
+      @syncer.perform_sync(@sync)
+    end
+
+    @sync.reload
+    assert_equal "success", @sync.data["steps"].last["status"]
+  end
+
   test "perform_post_sync calls auto_match_transfers on family" do
     Family.any_instance.unstub(:auto_match_transfers!)
     Family.any_instance.expects(:auto_match_transfers!).once
