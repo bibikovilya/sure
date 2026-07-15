@@ -7,7 +7,7 @@
         <%# Loading Spinner %>
         <div data-sync-selector-target="loading" class="hidden">
           <div class="flex flex-col items-center justify-center py-12">
-            <%= icon('loader-circle', size: 'xl', class: 'animate-spin text-primary') %>
+            <%= icon("loader-circle", size: "xl", class: "animate-spin text-primary") %>
             <p class="text-sm text-secondary mt-4"><%= t(".loading_sync_details") %></p>
           </div>
         </div>
@@ -24,11 +24,11 @@
               <% syncs.each do |s| %>
                 <option value="<%= s.id %>" <%= "selected" if s.id == sync.id %>>
                   <%= s.status.titleize %> -
-                  <%= (s.completed_at || s.failed_at || s.syncing_at || s.pending_at || s.created_at).strftime('%b %d, %Y %H:%M:%S') %>
+                  <%= (s.completed_at || s.failed_at || s.syncing_at || s.pending_at || s.created_at).strftime("%b %d, %Y %H:%M:%S") %>
                   <% if s.data.present? && (s.data["window_start_date"].present? || s.data["window_end_date"].present?) %>
-                    (<%= s.data["window_start_date"].present? ? Date.parse(s.data["window_start_date"]).strftime('%b %d, %Y') : '—' %>
+                    (<%= s.data["window_start_date"].present? ? Date.parse(s.data["window_start_date"]).strftime("%b %d, %Y") : "—" %>
                     →
-                    <%= s.data["window_end_date"].present? ? Date.parse(s.data["window_end_date"]).strftime('%b %d, %Y') : '—' %>)
+                    <%= s.data["window_end_date"].present? ? Date.parse(s.data["window_end_date"]).strftime("%b %d, %Y") : "—" %>)
                   <% end %>
                   <% if s.error.present? %>
                     [Error]
@@ -47,7 +47,7 @@
             <div class="flex justify-between py-1.5 border-b border-secondary">
               <dt class="text-sm text-secondary"><%= t(".status") %></dt>
               <dd class="text-sm font-medium">
-                <span class="<%= sync.status == 'completed' ? 'text-success' : sync.status == 'failed' ? 'text-destructive' : sync.status == 'syncing' ? 'text-warning' : 'text-secondary' %>">
+                <span class="<%= sync.status == "completed" ? "text-success" : sync.status == "failed" ? "text-destructive" : sync.status == "syncing" ? "text-warning" : "text-secondary" %>">
                   <%= sync.status.titleize %>
                 </span>
               </dd>
@@ -57,7 +57,7 @@
             <% relevant_label = sync.completed_at ? t(".completed_at") : sync.failed_at ? t(".failed_at") : sync.syncing_at ? t(".syncing_at") : sync.pending_at ? t(".pending_at") : t(".created_at") %>
             <div class="flex justify-between py-1.5 border-b border-secondary">
               <dt class="text-sm text-secondary"><%= relevant_label %></dt>
-              <dd class="text-sm <%= sync.failed_at ? 'text-destructive' : 'text-primary' %>"><%= relevant_timestamp.strftime('%b %d, %Y %H:%M:%S') %></dd>
+              <dd class="text-sm <%= sync.failed_at ? "text-destructive" : "text-primary" %>"><%= relevant_timestamp.strftime("%b %d, %Y %H:%M:%S") %></dd>
             </div>
 
             <% if sync.error.present? %>
@@ -77,7 +77,7 @@
               <%= image_tag sync.error_screenshot, class: "w-full h-auto rounded border border-secondary", alt: "Error screenshot" %>
               <div class="mt-2 flex gap-2">
                 <%= link_to rails_blob_path(sync.error_screenshot, disposition: "attachment"), class: "text-xs text-primary hover:underline inline-flex items-center gap-1", download: sync.error_screenshot.filename.to_s do %>
-                  <%= icon('download', size: 'xs') %>
+                  <%= icon("download", size: "xs") %>
                   <%= t(".download_screenshot") %>
                 <% end %>
               </div>
@@ -93,9 +93,9 @@
               <div class="flex justify-between py-1.5 border-b border-secondary">
                 <dt class="text-sm text-secondary"><%= t(".sync_window") %></dt>
                 <dd class="text-sm text-primary">
-                  <%= sync.data["window_start_date"].present? ? l(Date.parse(sync.data["window_start_date"])) : '—' %>
+                  <%= sync.data["window_start_date"].present? ? l(Date.parse(sync.data["window_start_date"])) : "—" %>
                   <span class="text-secondary mx-1">→</span>
-                  <%= sync.data["window_end_date"].present? ? l(Date.parse(sync.data["window_end_date"])) : '—' %>
+                  <%= sync.data["window_end_date"].present? ? l(Date.parse(sync.data["window_end_date"])) : "—" %>
                 </dd>
               </div>
             </dl>
@@ -134,7 +134,7 @@
             <summary class="cursor-pointer list-none">
               <h3 class="text-sm font-medium text-primary mb-2 inline-flex items-center gap-2">
                 <%= t(".transaction_details_section") %>
-                <%= icon('chevron-down', size: 'sm', class: 'group-open:rotate-180 transition-transform') %>
+                <%= icon("chevron-down", size: "sm", class: "group-open:rotate-180 transition-transform") %>
               </h3>
             </summary>
             <div class="space-y-4">
@@ -149,7 +149,7 @@
                           <p class="text-sm font-medium text-primary truncate"><%= entry["name"] %></p>
                           <p class="text-xs text-secondary"><%= format_date(entry["date"]) %></p>
                         </div>
-                        <p class="text-sm font-medium ml-2 <%= entry['amount'].to_f.negative? ? 'text-green-600' : 'text-primary' %>">
+                        <p class="text-sm font-medium ml-2 <%= entry["amount"].to_f.negative? ? "text-green-600" : "text-primary" %>">
                           <%= format_money(Money.new(-entry["amount"].to_f, entry["currency"])) %>
                         </p>
                       </div>
@@ -198,7 +198,7 @@
                           <p class="text-sm font-medium text-secondary truncate"><%= duplicate["name"] %></p>
                           <p class="text-xs text-secondary"><%= format_date(duplicate["date"]) %></p>
                         </div>
-                        <p class="text-sm font-medium ml-2 <%= duplicate['amount'].to_f.positive? ? 'text-green-600' : 'text-secondary' %>">
+                        <p class="text-sm font-medium ml-2 <%= duplicate["amount"].to_f.positive? ? "text-green-600" : "text-secondary" %>">
                           <%= format_money(Money.new(duplicate["amount"].to_f, duplicate["currency"])) %>
                         </p>
                       </div>
@@ -218,7 +218,7 @@
                           <p class="text-sm font-medium text-primary truncate"><%= blocked["name"] %></p>
                           <p class="text-xs text-secondary"><%= format_date(blocked["date"]) %></p>
                         </div>
-                        <p class="text-sm font-medium ml-2 <%= blocked['amount'].to_f.negative? ? 'text-green-600' : 'text-warning' %>">
+                        <p class="text-sm font-medium ml-2 <%= blocked["amount"].to_f.negative? ? "text-green-600" : "text-warning" %>">
                           <%= format_money(Money.new(-blocked["amount"].to_f, blocked["currency"])) %>
                         </p>
                       </div>
@@ -236,37 +236,37 @@
             <summary class="cursor-pointer list-none">
               <h3 class="text-sm font-medium text-primary mb-2 inline-flex items-center gap-2">
                 <%= t(".steps_section") %>
-                <%= icon('chevron-down', size: 'sm', class: 'group-open:rotate-180 transition-transform') %>
+                <%= icon("chevron-down", size: "sm", class: "group-open:rotate-180 transition-transform") %>
               </h3>
             </summary>
             <div class="space-y-1 max-h-96 overflow-y-auto">
               <% sync.data["steps"].each_with_index do |step, index| %>
-                <div class="flex items-start gap-2 py-2 px-3 rounded <%= step['status'] == 'error' ? 'bg-destructive/5' : step['status'] == 'success' ? 'bg-success/5' : 'bg-container-inset' %>">
+                <div class="flex items-start gap-2 py-2 px-3 rounded <%= step["status"] == "error" ? "bg-destructive/5" : step["status"] == "success" ? "bg-success/5" : "bg-container-inset" %>">
                   <div class="shrink-0 mt-0.5">
                     <% if step['status'] == 'success' %>
-                      <%= icon('check-circle', size: 'sm', class: 'text-success') %>
+                      <%= icon("check-circle", size: "sm", class: "text-success") %>
                     <% elsif step['status'] == 'error' %>
-                      <%= icon('x-circle', size: 'sm', class: 'text-destructive') %>
+                      <%= icon("x-circle", size: "sm", class: "text-destructive") %>
                     <% elsif step['status'] == 'in_progress' %>
-                      <%= icon('loader', size: 'sm', class: 'text-warning') %>
+                      <%= icon("loader", size: "sm", class: "text-warning") %>
                     <% else %>
-                      <%= icon('circle', size: 'sm', class: 'text-secondary') %>
+                      <%= icon("circle", size: "sm", class: "text-secondary") %>
                     <% end %>
                   </div>
                   <div class="flex-1 min-w-0">
                     <div class="flex items-start justify-between gap-2">
-                      <p class="text-xs font-medium <%= step['status'] == 'error' ? 'text-destructive' : 'text-primary' %>">
-                        <%= step['step'].humanize %>
+                      <p class="text-xs font-medium <%= step["status"] == "error" ? "text-destructive" : "text-primary" %>">
+                        <%= step["step"].humanize %>
                       </p>
                       <% if step['timestamp'].present? %>
                         <time class="text-xs text-secondary whitespace-nowrap">
-                          <%= Time.parse(step['timestamp']).strftime('%H:%M:%S') rescue step['timestamp'] %>
+                          <%= Time.parse(step["timestamp"]).strftime("%H:%M:%S") rescue step["timestamp"] %>
                         </time>
                       <% end %>
                     </div>
                     <% if step['message'].present? %>
-                      <p class="text-xs <%= step['status'] == 'error' ? 'text-destructive' : 'text-secondary' %> mt-0.5">
-                        <%= step['message'] %>
+                      <p class="text-xs <%= step["status"] == "error" ? "text-destructive" : "text-secondary" %> mt-0.5">
+                        <%= step["message"] %>
                       </p>
                     <% end %>
                   </div>
@@ -282,7 +282,7 @@
             <summary class="cursor-pointer list-none">
               <h3 class="text-sm font-medium text-primary mb-2 inline-flex items-center gap-2">
                 <%= t(".raw_data_section") %>
-                <%= icon('chevron-down', size: 'sm', class: 'group-open:rotate-180 transition-transform') %>
+                <%= icon("chevron-down", size: "sm", class: "group-open:rotate-180 transition-transform") %>
               </h3>
             </summary>
             <div class="bg-container-inset rounded-lg p-3 max-h-60 overflow-auto mt-2">
