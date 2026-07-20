@@ -12,9 +12,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Testing
 - `bin/rails test` - Run all tests
 - `bin/rails test:db` - Run tests with database reset
-- `bin/rails test:system` - Run system tests only (use sparingly - they take longer)
+- `DISABLE_PARALLELIZATION=true bin/rails test:system` - Run system tests only (use sparingly - they take longer)
 - `bin/rails test test/models/account_test.rb` - Run specific test file
 - `bin/rails test test/models/account_test.rb:42` - Run specific test at line
+
+#### System Tests in the Dev Container
+When running inside the Dev Container, the `SELENIUM_REMOTE_URL` environment variable is automatically set to the bundled `selenium/standalone-chromium` service. System tests will connect to that remote browser — no local Chrome installation is required.
+
+```bash
+DISABLE_PARALLELIZATION=true bin/rails test:system
+```
+
+To watch the browser live, open `http://localhost:7900` or `http://localhost:4444` in your host browser (password: `secret`).
 
 ### Linting & Formatting
 - `bin/rubocop` - Run Ruby linter
@@ -38,7 +47,7 @@ ALWAYS run these commands before opening a pull request:
 
 1. **Tests** (Required):
    - `bin/rails test` - Run all tests (always required)
-   - `bin/rails test:system` - Run system tests (only when applicable, they take longer)
+   - `DISABLE_PARALLELIZATION=true bin/rails test:system` - Run system tests (only when applicable, they take longer)
 
 2. **Linting** (Required):
    - `bin/rubocop -f github -a` - Ruby linting with auto-correct
@@ -82,6 +91,7 @@ The application provides both internal and external APIs:
 - External API: `/api/v1/` namespace with Doorkeeper OAuth and API key authentication
 - API responses use Jbuilder templates for JSON rendering
 - Rate limiting via Rack Attack with configurable limits per API key
+- **OpenAPI Documentation**: All API endpoints MUST have corresponding OpenAPI specs in `spec/requests/api/` using rswag. See `docs/api/openapi.yaml` for the generated documentation.
 
 ### Sync & Import System
 Two primary data ingestion methods:
@@ -100,10 +110,15 @@ Two primary data ingestion methods:
   - SimpleFIN: pending via `pending: true` or `posted` blank/0 + `transacted_at`.
   - Plaid: pending via Plaid `pending: true` (stored at `extra["plaid"]["pending"]` for bank/credit transactions imported via `PlaidEntry::Processor`).
 - Storage: provider data on `Transaction#extra` (e.g., `extra["simplefin"]["pending"]`; FX uses `fx_from`, `fx_date`).
-- UI: “Pending” badge when `transaction.pending?` is true; no badge if provider omits pendings.
-- Configuration (default-off)
-  - Centralized in `config/initializers/simplefin.rb` via `Rails.configuration.x.simplefin.*`.
-  - ENV-backed keys: `SIMPLEFIN_INCLUDE_PENDING=1`, `SIMPLEFIN_DEBUG_RAW=1`.
+- UI: "Pending" badge when `transaction.pending?` is true; no badge if provider omits pendings.
+- Configuration (default-on for pending)
+  - SimpleFIN: `config/initializers/simplefin.rb` via `Rails.configuration.x.simplefin.*`.
+  - Plaid: `config/initializers/plaid_config.rb` via `Rails.configuration.x.plaid.*`.
+  - Pending transactions are fetched by default and handled via reconciliation/filtering.
+  - Set `SIMPLEFIN_INCLUDE_PENDING=0` to disable pending fetching for SimpleFIN.
+  - Set `PLAID_INCLUDE_PENDING=0` to disable pending fetching for Plaid.
+  - Set `SIMPLEFIN_DEBUG_RAW=1` to enable raw payload debug logging.
+  - Set `UP_DEBUG_RAW=1` to enable raw Up payload debug logging. DEV-ONLY: the dump contains PII and is gated to local environments, so it never logs in managed/production.
 
 Provider support notes:
 - SimpleFIN: supports pending + FX metadata (stored under `extra["simplefin"]`).
@@ -118,13 +133,19 @@ Sidekiq handles asynchronous tasks:
 - AI chat responses (`AssistantResponseJob`)
 - Scheduled maintenance via sidekiq-cron
 
+### Debug Logging for Provider Syncs
+- Prefer `DebugLogEntry.capture(...)` over `Rails.logger.*` for provider sync/import failures, partial responses, and other support-relevant diagnostics.
+- Record support-relevant incidents in the super-admin `/settings/debug` UI rather than leaving them only in raw application logs.
+- Include `category`, `level`, `message`, `source`, `provider_key`, and structured `metadata`.
+- Attach `family` and `account_provider` whenever possible so support can filter to the affected provider connection.
+
 ### Frontend Architecture
 - **Hotwire Stack**: Turbo + Stimulus for reactive UI without heavy JavaScript
 - **ViewComponents**: Reusable UI components in `app/components/`
 - **Stimulus Controllers**: Handle interactivity, organized alongside components
 - **Charts**: D3.js for financial visualizations (time series, donut, sankey)
 - **Styling**: Tailwind CSS v4.x with custom design system
-  - Design system defined in `app/assets/tailwind/maybe-design-system.css`
+  - Design system defined in `app/assets/tailwind/sure-design-system.css`
   - Always use functional tokens (e.g., `text-primary` not `text-white`)
   - Prefer semantic HTML elements over JS components
   - Use `icon` helper for icons, never `lucide_icon` directly
@@ -160,6 +181,7 @@ Sidekiq handles asynchronous tasks:
 - Test helpers in `test/support/` for common scenarios
 - Only test critical code paths that significantly increase confidence
 - Write tests as you go, when required
+- **API Endpoints require OpenAPI specs** in `spec/requests/api/` for documentation purposes ONLY, not test (uses RSpec + rswag)
 
 ### Performance Considerations
 - Database queries optimized with proper indexes
@@ -207,7 +229,7 @@ Sidekiq handles asynchronous tasks:
 ## TailwindCSS Design System
 
 ### Design System Rules
-- **Always reference `app/assets/tailwind/maybe-design-system.css`** for primitives and tokens
+- **Always reference `app/assets/tailwind/sure-design-system.css`** for primitives and tokens
 - **Use functional tokens** defined in design system:
   - `text-primary` instead of `text-white`
   - `bg-container` instead of `bg-white`
@@ -320,3 +342,52 @@ end
 - Use `mocha` gem
 - Prefer `OpenStruct` for mock instances
 - Only mock what's necessary
+
+## API Development Guidelines
+
+### OpenAPI Documentation (MANDATORY)
+When adding or modifying API endpoints in `app/controllers/api/v1/`, you **MUST** create or update corresponding OpenAPI request specs:
+
+1. **Location**: `spec/requests/api/v1/{resource}_spec.rb`
+2. **Framework**: RSpec with rswag for OpenAPI generation
+3. **Schemas**: Define reusable schemas in `spec/swagger_helper.rb`
+4. **Generated Docs**: `docs/api/openapi.yaml`
+
+**Example structure for a new API endpoint:**
+```ruby
+# spec/requests/api/v1/widgets_spec.rb
+require 'swagger_helper'
+
+RSpec.describe 'API V1 Widgets', type: :request do
+  path '/api/v1/widgets' do
+    get 'List widgets' do
+      tags 'Widgets'
+      security [ { apiKeyAuth: [] } ]
+      produces 'application/json'
+      
+      response '200', 'widgets listed' do
+        schema '$ref' => '#/components/schemas/WidgetCollection'
+        run_test!
+      end
+    end
+  end
+end
+```
+
+**Regenerate OpenAPI docs after changes:**
+```bash
+RAILS_ENV=test bundle exec rake rswag:specs:swaggerize
+```
+
+### Post-commit API consistency (issue #944)
+After every API endpoint commit, ensure:
+
+1. **Minitest behavioral coverage** — Add or update tests in `test/controllers/api/v1/{resource}_controller_test.rb`. Use API key and `api_headers` (X-Api-Key). Cover index/show, CRUD where relevant, 401/403/422/404. Do not rely on rswag for behavioral assertions.
+
+2. **rswag docs-only** — Do not add `expect(...)` or `assert_*` in `spec/requests/api/v1/`. Use `run_test!` only so specs document request/response and regenerate `docs/api/openapi.yaml`.
+
+3. **Same API key auth in rswag** — Every request spec in `spec/requests/api/v1/` must use the same API key pattern (`ApiKey.generate_secure_key`, `ApiKey.create!(...)`, `let(:'X-Api-Key') { api_key.plain_key }`). Do not use Doorkeeper/OAuth in those specs so generated docs stay consistent.
+
+Full checklist and pattern: [.cursor/rules/api-endpoint-consistency.mdc](.cursor/rules/api-endpoint-consistency.mdc).
+
+To verify the implementation: `ruby test/support/verify_api_endpoint_consistency.rb`. To scan the current APIs for violations: `ruby test/support/verify_api_endpoint_consistency.rb --compliance`.

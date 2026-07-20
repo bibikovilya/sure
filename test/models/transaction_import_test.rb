@@ -14,6 +14,7 @@ class TransactionImportTest < ActiveSupport::TestCase
 
   test "configured? if uploaded and rows are generated" do
     @import.expects(:uploaded?).returns(true).once
+    @import.expects(:rows_count).returns(1).once
     assert @import.configured?
   end
 
@@ -84,7 +85,8 @@ class TransactionImportTest < ActiveSupport::TestCase
       date_format: "%m/%d/%Y",
       amount_col_label: "amount",
       entity_type_col_label: "amount_type",
-      amount_type_inflow_value: "debit",
+      amount_type_identifier_value: "debit",
+      amount_type_inflow_value: "inflows_positive",
       amount_type_strategy: "custom_column",
       signage_convention: nil # Explicitly set to nil to prove this is not needed
     )
@@ -98,7 +100,91 @@ class TransactionImportTest < ActiveSupport::TestCase
       @import.publish
     end
 
-    assert_equal [ -100, 200, -300 ], @import.entries.map(&:amount)
+    assert_equal [ -100, 200, -300 ], @import.entries.order(:date).map(&:amount)
+  end
+
+  test "csv_template uses ISO dates" do
+    first_row = @import.csv_template.first
+
+    assert_equal "2024-05-15", first_row["date*"]
+  end
+
+  test "generates rows from legacy account_name header with template labels" do
+    import_csv = <<~CSV
+      date,account_name,amount,name
+      2024-05-15,Checking Account,42.50,Legacy Export Row
+    CSV
+
+    @import.update!(
+      raw_file_str: import_csv,
+      date_col_label: "date*",
+      amount_col_label: "amount*",
+      name_col_label: "name",
+      account_col_label: "account",
+      date_format: "%Y-%m-%d",
+      amount_type_strategy: "signed_amount",
+      signage_convention: "inflows_negative"
+    )
+
+    @import.generate_rows_from_csv
+    row = @import.rows.reload.first
+
+    assert row.valid?
+    assert_equal "Checking Account", row.account
+    assert_equal "2024-05-15", row.date
+    assert_equal BigDecimal("42.50"), row.signed_amount
+  end
+
+  test "generates rows from alias column when configured column value is blank" do
+    import_csv = <<~CSV
+      date*,account,account_name,amount,name
+      2024-05-15,,Checking Account,42.50,Legacy Export Row
+    CSV
+
+    @import.update!(
+      raw_file_str: import_csv,
+      date_col_label: "date*",
+      amount_col_label: "amount*",
+      name_col_label: "name",
+      account_col_label: "account",
+      date_format: "%Y-%m-%d",
+      amount_type_strategy: "signed_amount",
+      signage_convention: "inflows_negative"
+    )
+
+    @import.generate_rows_from_csv
+    row = @import.rows.reload.first
+
+    assert row.valid?
+    assert_equal "Checking Account", row.account
+  end
+
+  test "rejects duplicate normalized CSV headers" do
+    import_csv = <<~CSV
+      date,date*,amount,name
+      2024-05-15,2024-05-16,42.50,Duplicate Date Row
+    CSV
+
+    @import.update!(
+      raw_file_str: import_csv,
+      date_col_label: "date",
+      amount_col_label: "amount",
+      name_col_label: "name",
+      date_format: "%Y-%m-%d",
+      amount_type_strategy: "signed_amount",
+      signage_convention: "inflows_negative"
+    )
+
+    error = assert_raises(ActiveRecord::RecordInvalid) { @import.generate_rows_from_csv }
+
+    assert_includes error.record.errors.full_messages.to_sentence, "date, date*"
+  end
+
+  test "parses legacy comma tags and escaped pipe tags" do
+    assert_equal [ "groceries", "essentials" ], Import::Row.new(tags: "groceries,essentials").tags_list
+    assert_equal [ "Food, Dining", "essentials" ], Import::Row.new(tags: "Food\\, Dining,essentials").tags_list
+    assert_equal [ "Food|Dining" ], Import::Row.new(tags: "Food\\|Dining").tags_list
+    assert_equal [ "Food|Dining", "essentials" ], Import::Row.new(tags: "Food\\|Dining|essentials").tags_list
   end
 
   test "does not create duplicate when matching transaction exists with same name" do
@@ -356,5 +442,40 @@ class TransactionImportTest < ActiveSupport::TestCase
     # Check that each account got one entry from this import
     assert_equal 1, checking.entries.where(import: @import).count
     assert_equal 1, credit_card.entries.where(import: @import).count
+  end
+
+  test "skips specified number of rows" do
+    account = accounts(:depository)
+    import_csv = <<~CSV
+      Some Metadata provided by bank
+      Generated on 2024-01-01
+      date,name,amount
+      01/01/2024,Transaction 1,100
+      01/02/2024,Transaction 2,200
+    CSV
+
+    @import.update!(
+      account: account,
+      raw_file_str: import_csv,
+      date_col_label: "date",
+      amount_col_label: "amount",
+      name_col_label: "name",
+      date_format: "%m/%d/%Y",
+      amount_type_strategy: "signed_amount",
+      signage_convention: "inflows_negative",
+      rows_to_skip: 2
+    )
+
+    @import.generate_rows_from_csv
+    @import.reload
+
+    # helper to check rows - assuming 2 valid rows
+    assert_equal 2, @import.rows.count
+
+    # Sort to ensure order
+    rows = @import.rows.order(date: :asc)
+
+    assert_equal "Transaction 1", rows.first.name
+    assert_equal "100", rows.first.amount
   end
 end

@@ -94,6 +94,30 @@ class RuleTest < ActiveSupport::TestCase
     assert_not transaction_entry.excluded, "Transaction should not be excluded when attribute is locked"
   end
 
+  test "transaction name rules normalize whitespace in comparisons" do
+    transaction_entry = create_transaction(
+      date: Date.current,
+      account: @account,
+      name: "Company  -   Mobile",
+      amount: 80
+    )
+
+    rule = Rule.create!(
+      family: @family,
+      resource_type: "transaction",
+      effective_date: 1.day.ago.to_date,
+      conditions: [ Rule::Condition.new(condition_type: "transaction_name", operator: "like", value: "Company - Mobile") ],
+      actions: [ Rule::Action.new(action_type: "set_transaction_category", value: @groceries_category.id) ]
+    )
+
+    assert_equal 1, rule.affected_resource_count
+
+    rule.apply
+    transaction_entry.reload
+
+    assert_equal @groceries_category, transaction_entry.transaction.category
+  end
+
   # Artificial limitation put in place to prevent users from creating overly complex rules
   # Rules should be shallow and wide
   test "no nested compound conditions" do
@@ -112,6 +136,40 @@ class RuleTest < ActiveSupport::TestCase
 
     assert_not rule.valid?
     assert_equal [ "Compound conditions cannot be nested" ], rule.errors.full_messages
+  end
+
+  test "displayed_condition falls back to next valid condition when first compound condition is empty" do
+    rule = Rule.new(
+      family: @family,
+      resource_type: "transaction",
+      actions: [ Rule::Action.new(action_type: "exclude_transaction") ],
+      conditions: [
+        Rule::Condition.new(condition_type: "compound", operator: "and"),
+        Rule::Condition.new(condition_type: "transaction_name", operator: "like", value: "starbucks")
+      ]
+    )
+
+    displayed_condition = rule.displayed_condition
+
+    assert_not_nil displayed_condition
+    assert_equal "transaction_name", displayed_condition.condition_type
+    assert_equal "like", displayed_condition.operator
+    assert_equal "starbucks", displayed_condition.value
+  end
+
+  test "additional_displayable_conditions_count ignores empty compound conditions" do
+    rule = Rule.new(
+      family: @family,
+      resource_type: "transaction",
+      actions: [ Rule::Action.new(action_type: "exclude_transaction") ],
+      conditions: [
+        Rule::Condition.new(condition_type: "compound", operator: "and"),
+        Rule::Condition.new(condition_type: "transaction_name", operator: "like", value: "first"),
+        Rule::Condition.new(condition_type: "transaction_amount", operator: ">", value: 100)
+      ]
+    )
+
+    assert_equal 1, rule.additional_displayable_conditions_count
   end
 
   test "rule matching on transaction details" do
@@ -200,5 +258,94 @@ class RuleTest < ActiveSupport::TestCase
 
     assert_equal business_category, transaction_entry.transaction.category, "Transaction with 'business' in notes should be categorized"
     assert_nil transaction_entry2.transaction.category, "Transaction without 'business' in notes should not be categorized"
+  end
+
+  test "total_affected_resource_count deduplicates overlapping rules" do
+    # Create transactions
+    transaction_entry1 = create_transaction(date: Date.current, account: @account, name: "Whole Foods", amount: 50)
+    transaction_entry2 = create_transaction(date: Date.current, account: @account, name: "Whole Foods", amount: 100)
+    transaction_entry3 = create_transaction(date: Date.current, account: @account, name: "Target", amount: 75)
+
+    # Rule 1: Match transactions with name "Whole Foods" (matches txn 1 and 2)
+    rule1 = Rule.create!(
+      family: @family,
+      resource_type: "transaction",
+      effective_date: 1.day.ago.to_date,
+      conditions: [ Rule::Condition.new(condition_type: "transaction_name", operator: "like", value: "Whole Foods") ],
+      actions: [ Rule::Action.new(action_type: "set_transaction_category", value: @groceries_category.id) ]
+    )
+
+    # Rule 2: Match transactions with amount > 60 (matches txn 2 and 3)
+    rule2 = Rule.create!(
+      family: @family,
+      resource_type: "transaction",
+      effective_date: 1.day.ago.to_date,
+      conditions: [ Rule::Condition.new(condition_type: "transaction_amount", operator: ">", value: 60) ],
+      actions: [ Rule::Action.new(action_type: "set_transaction_category", value: @groceries_category.id) ]
+    )
+
+    # Rule 1 affects 2 transactions, Rule 2 affects 2 transactions
+    # But transaction_entry2 is matched by both, so total unique should be 3
+    assert_equal 2, rule1.affected_resource_count
+    assert_equal 2, rule2.affected_resource_count
+    assert_equal 3, Rule.total_affected_resource_count([ rule1, rule2 ])
+  end
+
+  test "total_affected_resource_count returns zero for empty rules" do
+    assert_equal 0, Rule.total_affected_resource_count([])
+  end
+
+  test "rule matching on transaction account" do
+    # Create a second account
+    other_account = @family.accounts.create!(
+      name: "Other account",
+      balance: 500,
+      currency: "USD",
+      accountable: Depository.new
+    )
+
+    # Transaction on the target account
+    transaction_entry1 = create_transaction(
+      date: Date.current,
+      account: @account,
+      amount: 50
+    )
+
+    # Transaction on another account
+    transaction_entry2 = create_transaction(
+      date: Date.current,
+      account: other_account,
+      amount: 75
+    )
+
+    rule = Rule.create!(
+      family: @family,
+      resource_type: "transaction",
+      effective_date: 1.day.ago.to_date,
+      conditions: [
+        Rule::Condition.new(
+          condition_type: "transaction_account",
+          operator: "=",
+          value: @account.id
+        )
+      ],
+      actions: [
+        Rule::Action.new(
+          action_type: "set_transaction_category",
+          value: @groceries_category.id
+        )
+      ]
+    )
+
+    rule.apply
+
+    transaction_entry1.reload
+    transaction_entry2.reload
+
+    assert_equal @groceries_category, transaction_entry1.transaction.category,
+      "Transaction on selected account should be categorized"
+
+    assert_nil transaction_entry2.transaction.category,
+      "Transaction on other account should not be categorized"
   end
 end

@@ -1,32 +1,28 @@
 class LunchflowItem < ApplicationRecord
-  include Syncable, Provided, Unlinking
+  include Syncable, Provided, Unlinking, Encryptable
+
+  DEFAULT_BASE_URL = "https://lunchflow.app/api/v1".freeze
 
   enum :status, { good: "good", requires_update: "requires_update" }, default: :good
 
-  # Helper to detect if ActiveRecord Encryption is configured for this app
-  def self.encryption_ready?
-    creds_ready = Rails.application.credentials.active_record_encryption.present?
-    env_ready = ENV["ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY"].present? &&
-                ENV["ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY"].present? &&
-                ENV["ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT"].present?
-    creds_ready || env_ready
-  end
-
-  # Encrypt sensitive credentials if ActiveRecord encryption is configured (credentials OR env vars)
+  # Encrypt sensitive credentials and raw payloads if ActiveRecord encryption is configured
   if encryption_ready?
     encrypts :api_key, deterministic: true
+    encrypts :raw_payload
+    encrypts :raw_institution_payload
   end
 
   validates :name, presence: true
   validates :api_key, presence: true, on: :create
 
   belongs_to :family
-  has_one_attached :logo
+  has_one_attached :logo, dependent: :purge_later
 
   has_many :lunchflow_accounts, dependent: :destroy
   has_many :accounts, through: :lunchflow_accounts
 
   scope :active, -> { where(scheduled_for_deletion: false) }
+  scope :syncable, -> { active }
   scope :ordered, -> { order(created_at: :desc) }
   scope :needs_update, -> { where(status: :requires_update) }
 
@@ -160,6 +156,17 @@ class LunchflowItem < ApplicationRecord
   end
 
   def effective_base_url
-    base_url.presence || "https://lunchflow.app/api/v1"
+    return DEFAULT_BASE_URL if base_url.blank?
+
+    uri = URI.parse(base_url)
+    return DEFAULT_BASE_URL unless uri.is_a?(URI::HTTPS)
+    return DEFAULT_BASE_URL unless uri.host == "lunchflow.app"
+    return DEFAULT_BASE_URL unless [ "", "/", "/api/v1", "/api/v1/" ].include?(uri.path)
+    return DEFAULT_BASE_URL unless uri.query.blank?
+    return DEFAULT_BASE_URL unless uri.fragment.blank?
+
+    DEFAULT_BASE_URL
+  rescue URI::InvalidURIError
+    DEFAULT_BASE_URL
   end
 end

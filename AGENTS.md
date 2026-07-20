@@ -34,11 +34,50 @@
 - Never commit secrets. Start from `.env.local.example`; use `.env.local` for development only.
 - Run `bin/brakeman` before major PRs. Prefer environment variables over hard-coded values.
 
-## Providers: Pending Transactions and FX Metadata (SimpleFIN/Plaid)
+## API Development Guidelines
+
+### OpenAPI Documentation (MANDATORY)
+When adding or modifying API endpoints in `app/controllers/api/v1/`, you **MUST** create or update corresponding OpenAPI request specs for **DOCUMENTATION ONLY**:
+
+1. **Location**: `spec/requests/api/v1/{resource}_spec.rb`
+2. **Framework**: RSpec with rswag for OpenAPI generation
+3. **Schemas**: Define reusable schemas in `spec/swagger_helper.rb`
+4. **Generated Docs**: `docs/api/openapi.yaml`
+5. **Regenerate**: Run `RAILS_ENV=test bundle exec rake rswag:specs:swaggerize` after changes
+
+### Post-commit API consistency (LLM checklist)
+After every API endpoint commit, ensure: (1) **Minitest** behavioral coverage in `test/controllers/api/v1/{resource}_controller_test.rb` (no behavioral assertions in rswag); (2) **rswag** remains docs-only (no `expect`/`assert_*` in `spec/requests/api/v1/`); (3) **rswag auth** uses the same API key pattern everywhere (`X-Api-Key`, not OAuth/Bearer). Full checklist: [.cursor/rules/api-endpoint-consistency.mdc](.cursor/rules/api-endpoint-consistency.mdc).
+
+## Design System Hygiene (UI PRs)
+
+When a PR touches `.erb`, view components, or `.css`:
+
+1. **Tokens, not palette.** Use functional tokens from `app/assets/tailwind/sure-design-system.css` (`bg-warning/10`, `text-destructive`, `bg-container`, `text-primary`, `border-primary`). No raw Tailwind palette (`bg-blue-50`, `text-red-500`, hex literals).
+2. **Reach for `DS::*` first.** Check `app/components/DS/` (`DS::Alert`, `DS::Button`, `DS::Disclosure`, `DS::Dialog`, `DS::Menu`, etc.) before writing an alert, badge, button, disclosure, dialog, or input shape.
+3. **Two copies → lift to DS.** Same hand-rolled shape ≥2× in a diff with no DS equivalent → propose a new `DS::*` primitive before the second copy lands.
+4. **Conventions.** Use the `icon` helper (never `lucide_icon` directly), no raw SVG outside DS primitives, user-facing strings via `t()`, avoid arbitrary `*-[Npx]` values when a scale token fits.
+
+Reviewers escalate violations of (2)–(3) to close/rewrite; (1) and (4) are request-changes.
+
+## Securities Providers
+
+If you need to add a new securities price provider (Tiingo, EODHD, Binance-style crypto, etc.), see [adding-a-securities-provider.md](./docs/llm-guides/adding-a-securities-provider.md) for the full walkthrough — provider class, registry wiring, MIC handling, settings UI, locales, and tests.
+
+## Debug Logging for Provider Syncs
+
+When a provider sync/import path hits a recoverable error or suspicious partial response that support may need to inspect later, prefer `DebugLogEntry.capture(...)` over `Rails.logger.*`.
+
+- Record support-relevant diagnostics in the debug log so they surface in the super-admin-friendly `/settings/debug` UI.
+- Include `category`, `level`, `message`, `source`, `provider_key`, and useful structured `metadata`.
+- Attach `family` and `account_provider` when available so support can filter and trace the affected connection.
+- Reserve raw Rails logging for low-value local noise; anything operators may need should go to the debug log.
+
+## Providers: Pending Transactions and FX Metadata (SimpleFIN/Plaid/Lunchflow)
 
 - Pending detection
   - SimpleFIN: pending when provider sends `pending: true`, or when `posted` is blank/0 and `transacted_at` is present.
   - Plaid: pending when Plaid sends `pending: true` (stored at `transaction.extra["plaid"]["pending"]` for bank/credit transactions imported via `PlaidEntry::Processor`).
+  - Lunchflow: pending when API returns `isPending: true` in transaction response (stored at `transaction.extra["lunchflow"]["pending"]`).
 - Storage (extras)
   - Provider metadata lives on `Transaction#extra`, namespaced (e.g., `extra["simplefin"]["pending"]`).
   - SimpleFIN FX: `extra["simplefin"]["fx_from"]`, `extra["simplefin"]["fx_date"]`.
@@ -48,14 +87,17 @@
   - Some providers don’t expose pendings; in that case nothing is shown.
 - Configuration (default-off)
   - SimpleFIN runtime toggles live in `config/initializers/simplefin.rb` via `Rails.configuration.x.simplefin.*`.
+  - Lunchflow runtime toggles live in `config/initializers/lunchflow.rb` via `Rails.configuration.x.lunchflow.*`.
   - ENV-backed keys:
     - `SIMPLEFIN_INCLUDE_PENDING=1` (forces `pending=1` on SimpleFIN fetches when caller didn’t specify a `pending:` arg)
     - `SIMPLEFIN_DEBUG_RAW=1` (logs raw payload returned by SimpleFIN)
+    - `LUNCHFLOW_INCLUDE_PENDING=1` (forces `include_pending=true` on Lunchflow API requests)
+    - `LUNCHFLOW_DEBUG_RAW=1` (logs raw payload returned by Lunchflow)
 
 ### Provider support notes
 
 - SimpleFIN: supports pending + FX metadata; stored under `extra["simplefin"]`.
 - Plaid: supports pending when the upstream Plaid payload includes `pending: true`; stored under `extra["plaid"]`.
 - Plaid investments: investment transactions currently do not store pending metadata.
-- Lunchflow: does not currently store pending metadata.
+- Lunchflow: supports pending via `include_pending` query parameter; stored under `extra["lunchflow"]`.
 - Manual/CSV imports: no pending concept.

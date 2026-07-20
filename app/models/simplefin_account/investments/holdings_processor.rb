@@ -9,13 +9,29 @@ class SimplefinAccount::Investments::HoldingsProcessor
 
     holdings_data.each do |simplefin_holding|
       begin
-        symbol = simplefin_holding["symbol"]
+        symbol = simplefin_holding["symbol"].presence
         holding_id = simplefin_holding["id"]
+        description = simplefin_holding["description"].to_s.strip
 
         Rails.logger.debug({ event: "simplefin.holding.start", sfa_id: simplefin_account.id, account_id: account&.id, id: holding_id, symbol: symbol, raw: simplefin_holding }.to_json)
 
-        unless symbol.present? && holding_id.present?
-          Rails.logger.debug({ event: "simplefin.holding.skip", reason: "missing_symbol_or_id", id: holding_id, symbol: symbol }.to_json)
+        unless holding_id.present?
+          Rails.logger.debug({ event: "simplefin.holding.skip", reason: "missing_id", id: holding_id, symbol: symbol }.to_json)
+          next
+        end
+
+        # If symbol is missing but we have a description, create a synthetic ticker
+        # This allows tracking holdings like 401k funds that don't have standard symbols
+        # Append a hash suffix to ensure uniqueness for similar descriptions
+        if symbol.blank? && description.present?
+          normalized = description.gsub(/[^a-zA-Z0-9]/, "_").upcase.truncate(24, omission: "")
+          hash_suffix = Digest::MD5.hexdigest(description)[0..4].upcase
+          symbol = "CUSTOM:#{normalized}_#{hash_suffix}"
+          Rails.logger.info("SimpleFin: using synthetic ticker #{symbol} for holding #{holding_id} (#{description})")
+        end
+
+        unless symbol.present?
+          Rails.logger.debug({ event: "simplefin.holding.skip", reason: "no_symbol_or_description", id: holding_id }.to_json)
           next
         end
 
@@ -26,9 +42,13 @@ class SimplefinAccount::Investments::HoldingsProcessor
         end
 
         # Parse provider data with robust fallbacks across SimpleFin sources
+        # NOTE: "value" is intentionally excluded from the market_value fallback chain
+        # because some brokerages (e.g. Vanguard, Fidelity) use "value" to mean cost basis,
+        # which would cause the system to display average cost as current price. (GH #1182)
         qty = parse_decimal(any_of(simplefin_holding, %w[shares quantity qty units]))
-        market_value = parse_decimal(any_of(simplefin_holding, %w[market_value value current_value]))
-        cost_basis = parse_decimal(any_of(simplefin_holding, %w[cost_basis basis total_cost]))
+        market_value = parse_decimal(any_of(simplefin_holding, %w[market_value current_value]))
+        raw_cost_basis, cost_basis_source_key = cost_basis_from(simplefin_holding)
+        cost_basis = normalize_cost_basis(raw_cost_basis, qty, cost_basis_source_key, institution_reports_total_basis?)
 
         # Derive price from market_value when possible; otherwise fall back to any price field
         fallback_price = parse_decimal(any_of(simplefin_holding, %w[purchase_price price unit_price average_cost avg_cost]))
@@ -47,8 +67,10 @@ class SimplefinAccount::Investments::HoldingsProcessor
           0
         end
 
-        # Use best-known date: created -> updated_at -> as_of -> date -> today
-        holding_date = parse_holding_date(any_of(simplefin_holding, %w[created updated_at as_of date])) || Date.current
+        # SimpleFIN holdings represent a current snapshot, not historical positions.
+        # Always use today's date regardless of the `created` timestamp (which is when
+        # the holding was first seen by SimpleFIN, not when we observed it).
+        holding_date = Date.current
 
         # Skip zero positions with no value to avoid invisible rows
         next if qty.to_d.zero? && computed_amount.to_d.zero?
@@ -57,7 +79,7 @@ class SimplefinAccount::Investments::HoldingsProcessor
           security: security,
           quantity: qty,
           amount: computed_amount,
-          currency: simplefin_holding["currency"] || "USD",
+          currency: simplefin_holding["currency"].presence || "USD",
           date: holding_date,
           price: price,
           cost_basis: cost_basis,
@@ -91,6 +113,63 @@ class SimplefinAccount::Investments::HoldingsProcessor
       simplefin_account.raw_holdings_payload || []
     end
 
+    def cost_basis_from(simplefin_holding)
+      %w[cost_basis basis total_cost value].each do |key|
+        raw = simplefin_holding[key]
+        next if raw.nil? || raw.to_s.strip.empty?
+
+        return [ parse_decimal(raw), key ]
+      end
+
+      [ nil, nil ]
+    end
+
+    # Sure stores holding cost_basis as per-share average cost. SimpleFIN
+    # brokerages are inconsistent about which field carries which shape:
+    #
+    #   - total_cost / value: always a total position cost per the SimpleFIN
+    #     spec and observed payloads; divide by qty unconditionally.
+    #   - cost_basis / basis: the spec calls this per-share, and most
+    #     brokerages comply. Keep these values unchanged by default.
+    #
+    # Exception: a small allowlist of brokerages (Vanguard, Fidelity) is
+    # known to populate cost_basis with the total position cost in violation
+    # of the spec (#1718, #1182). For those connections only, divide by qty.
+    #
+    # An earlier revision of this fix used a magnitude heuristic
+    # (share_price × √qty midpoint). It was withdrawn because a legitimate
+    # per-share basis on a holding with a large unrealized loss
+    # (e.g. 100 shares with basis $100 now worth $5) trips the midpoint and
+    # gets mis-divided to $1/share — corrupting compliant providers. The
+    # allowlist trades some manual maintenance for that safety.
+    def normalize_cost_basis(raw_cost_basis, qty, source_key, total_basis_institution = false)
+      return nil if raw_cost_basis.nil?
+
+      if %w[total_cost value].include?(source_key) ||
+         (total_basis_institution && %w[cost_basis basis].include?(source_key))
+        return nil unless qty.to_d.positive?
+        return raw_cost_basis / qty
+      end
+
+      raw_cost_basis
+    end
+
+    # Institutions known to populate the SimpleFIN `cost_basis` / `basis`
+    # field with the total position cost rather than the per-share value the
+    # spec requires. Matched as case-insensitive substrings against the
+    # account's stored org name and domain.
+    TOTAL_BASIS_INSTITUTIONS = %w[vanguard fidelity].freeze
+
+    def institution_reports_total_basis?
+      org = simplefin_account.respond_to?(:org_data) ? simplefin_account.org_data : nil
+      return false if org.blank?
+
+      candidates = [ org["name"], org[:name], org["domain"], org[:domain] ].compact.map(&:to_s).map(&:downcase)
+      return false if candidates.empty?
+
+      TOTAL_BASIS_INSTITUTIONS.any? { |needle| candidates.any? { |c| c.include?(needle) } }
+    end
+
     def resolve_security(symbol, description)
       # Normalize crypto tickers to a distinct namespace so they don't collide with equities
       sym = symbol.to_s.upcase
@@ -101,14 +180,23 @@ class SimplefinAccount::Investments::HoldingsProcessor
       if !sym.include?(":") && (is_crypto_account || is_crypto_symbol || mentions_crypto)
         sym = "CRYPTO:#{sym}"
       end
+
+      # Custom tickers (from holdings without symbols) should always be offline
+      is_custom = sym.start_with?("CUSTOM:")
+
       # Use Security::Resolver to find or create the security, but be resilient
       begin
+        if is_custom
+          # Skip resolver for custom tickers - create offline security directly
+          raise "Custom ticker - skipping resolver"
+        end
         Security::Resolver.new(sym).resolve
       rescue => e
         # If provider search fails or any unexpected error occurs, fall back to an offline security
-        Rails.logger.warn "SimpleFin: resolver failed for symbol=#{sym}: #{e.class} - #{e.message}; falling back to offline security"
+        Rails.logger.warn "SimpleFin: resolver failed for symbol=#{sym}: #{e.class} - #{e.message}; falling back to offline security" unless is_custom
         Security.find_or_initialize_by(ticker: sym).tap do |sec|
           sec.offline = true if sec.respond_to?(:offline) && sec.offline != true
+          sec.name = description.presence if sec.name.blank? && description.present?
           sec.save! if sec.changed?
         end
       end

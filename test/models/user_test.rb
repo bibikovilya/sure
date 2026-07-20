@@ -1,8 +1,15 @@
 require "test_helper"
 
 class UserTest < ActiveSupport::TestCase
+  include ActiveJob::TestHelper
+
   def setup
     @user = users(:family_admin)
+  end
+
+  def teardown
+    clear_enqueued_jobs
+    clear_performed_jobs
   end
 
   test "should be valid" do
@@ -84,22 +91,69 @@ class UserTest < ActiveSupport::TestCase
   test "enable_mfa! enables MFA and generates backup codes" do
     user = users(:family_member)
     user.setup_mfa!
-    user.enable_mfa!
+    backup_codes = user.enable_mfa!
 
     assert user.otp_required?
+    assert_equal 8, backup_codes.length
+    assert backup_codes.all? { |code| code.match?(/\A[0-9a-f]{16}\z/) }
     assert_equal 8, user.otp_backup_codes.length
-    assert user.otp_backup_codes.all? { |code| code.length == 8 }
+    assert user.otp_backup_codes.all? { |code| code.start_with?("$2") }
+    assert_empty backup_codes & user.otp_backup_codes
+  end
+
+  test "enable_mfa! requires an OTP secret" do
+    user = users(:family_member)
+    user.setup_mfa!
+    user.update_column(:otp_secret, nil)
+
+    assert_raises(ArgumentError) { user.enable_mfa! }
+    assert_not user.reload.otp_required?
+    assert_empty user.otp_backup_codes
   end
 
   test "disable_mfa! removes all MFA data" do
     user = users(:family_member)
     user.setup_mfa!
     user.enable_mfa!
+    user.webauthn_credentials.create!(
+      nickname: "YubiKey",
+      credential_id: "credential-id",
+      public_key: "public-key"
+    )
+
     user.disable_mfa!
 
     assert_nil user.otp_secret
     assert_not user.otp_required?
     assert_empty user.otp_backup_codes
+    assert_empty user.webauthn_credentials
+  end
+
+  test "ensure_webauthn_id! generates a stable credential user handle" do
+    user = users(:family_member)
+    assert_nil user.webauthn_id
+
+    webauthn_id = user.ensure_webauthn_id!
+
+    assert webauthn_id.present?
+    assert_equal webauthn_id, user.reload.ensure_webauthn_id!
+  end
+
+  test "webauthn_enabled? requires MFA and at least one credential" do
+    user = users(:family_member)
+    assert_not user.webauthn_enabled?
+
+    user.setup_mfa!
+    user.enable_mfa!
+    assert_not user.webauthn_enabled?
+
+    user.webauthn_credentials.create!(
+      nickname: "Touch ID",
+      credential_id: "touch-id-credential",
+      public_key: "public-key"
+    )
+
+    assert user.webauthn_enabled?
   end
 
   test "verify_otp? validates TOTP codes" do
@@ -114,20 +168,89 @@ class UserTest < ActiveSupport::TestCase
     assert_not user.verify_otp?("123456")
   end
 
-  test "verify_otp? accepts backup codes" do
+  test "verify_otp? does not check backup code digests for normal TOTP input" do
+    user = users(:family_member)
+    user.setup_mfa!
+    user.enable_mfa!
+    valid_code = ROTP::TOTP.new(user.otp_secret, issuer: "Sure Finances").now
+
+    BCrypt::Password.expects(:new).never
+
+    assert user.verify_otp?(valid_code)
+  end
+
+  test "verify_otp? fast rejects non-backup-code input before digest checks" do
     user = users(:family_member)
     user.setup_mfa!
     user.enable_mfa!
 
-    backup_code = user.otp_backup_codes.first
+    BCrypt::Password.expects(:new).never
+
+    assert_not user.verify_otp?("not-a-backup-code")
+  end
+
+  test "verify_otp? rejects unmatched legacy-shaped backup input" do
+    user = users(:family_member)
+    user.setup_mfa!
+    user.enable_mfa!
+
+    assert_not user.verify_otp?("deadbeef")
+  end
+
+  test "verify_otp? accepts backup codes" do
+    user = users(:family_member)
+    user.setup_mfa!
+    backup_codes = user.enable_mfa!
+
+    backup_code = backup_codes.first
+    matching_digest = user.otp_backup_codes.find { |digest| BCrypt::Password.new(digest).is_password?(backup_code) }
+    assert_not_nil matching_digest
+
     assert user.verify_otp?(backup_code)
 
     # Backup code should be consumed
-    assert_not user.otp_backup_codes.include?(backup_code)
     assert_equal 7, user.otp_backup_codes.length
+    assert_not_includes user.otp_backup_codes, matching_digest
 
     # Used backup code should not work again
     assert_not user.verify_otp?(backup_code)
+  end
+
+  test "verify_otp? reloads backup codes while consuming under lock" do
+    user = users(:family_member)
+    user.setup_mfa!
+    backup_code = user.enable_mfa!.first
+    stale_user = User.find(user.id)
+
+    user.update!(otp_backup_codes: [])
+
+    assert_not stale_user.verify_otp?(backup_code)
+    assert_empty stale_user.reload.otp_backup_codes
+  end
+
+  test "verify_otp? accepts and consumes legacy plaintext backup codes once" do
+    user = users(:family_member)
+    user.setup_mfa!
+    user.update!(otp_required: true, otp_backup_codes: [ "deadbeef" ])
+
+    assert user.verify_otp?("deadbeef")
+
+    assert_empty user.reload.otp_backup_codes
+    assert_not user.verify_otp?("deadbeef")
+  end
+
+  test "verify_otp? accepts and consumes migrated legacy backup code digests" do
+    user = users(:family_member)
+    user.setup_mfa!
+    user.update!(
+      otp_required: true,
+      otp_backup_codes: [ BCrypt::Password.create("deadbeef", cost: BCrypt::Engine::MIN_COST).to_s ]
+    )
+
+    assert user.verify_otp?("deadbeef")
+
+    assert_empty user.reload.otp_backup_codes
+    assert_not user.verify_otp?("deadbeef")
   end
 
   test "provisioning_uri generates correct URI" do
@@ -142,7 +265,7 @@ class UserTest < ActiveSupport::TestCase
   test "ai_available? returns true when openai access token set in settings" do
     Rails.application.config.app_mode.stubs(:self_hosted?).returns(true)
     previous = Setting.openai_access_token
-    with_env_overrides OPENAI_ACCESS_TOKEN: nil do
+    with_env_overrides OPENAI_ACCESS_TOKEN: nil, EXTERNAL_ASSISTANT_URL: nil, EXTERNAL_ASSISTANT_TOKEN: nil do
       Setting.openai_access_token = nil
       assert_not @user.ai_available?
 
@@ -151,6 +274,167 @@ class UserTest < ActiveSupport::TestCase
     end
   ensure
     Setting.openai_access_token = previous
+  end
+
+  test "ai_available? returns true when external assistant is configured and family type is external" do
+    Rails.application.config.app_mode.stubs(:self_hosted?).returns(true)
+    previous = Setting.openai_access_token
+    @user.family.update!(assistant_type: "external")
+    with_env_overrides OPENAI_ACCESS_TOKEN: nil, EXTERNAL_ASSISTANT_URL: "http://localhost:18789/v1/chat", EXTERNAL_ASSISTANT_TOKEN: "test-token" do
+      Setting.openai_access_token = nil
+      assert @user.ai_available?
+    end
+  ensure
+    Setting.openai_access_token = previous
+    @user.family.update!(assistant_type: "builtin")
+  end
+
+  test "ai_available? returns false when external assistant is configured but family type is builtin" do
+    Rails.application.config.app_mode.stubs(:self_hosted?).returns(true)
+    previous = Setting.openai_access_token
+    with_env_overrides OPENAI_ACCESS_TOKEN: nil, EXTERNAL_ASSISTANT_URL: "http://localhost:18789/v1/chat", EXTERNAL_ASSISTANT_TOKEN: "test-token" do
+      Setting.openai_access_token = nil
+      assert_not @user.ai_available?
+    end
+  ensure
+    Setting.openai_access_token = previous
+  end
+
+  test "ai_available? returns false when external assistant is configured but user is not in allowlist" do
+    Rails.application.config.app_mode.stubs(:self_hosted?).returns(true)
+    previous = Setting.openai_access_token
+    @user.family.update!(assistant_type: "external")
+    with_env_overrides OPENAI_ACCESS_TOKEN: nil, EXTERNAL_ASSISTANT_URL: "http://localhost:18789/v1/chat", EXTERNAL_ASSISTANT_TOKEN: "test-token", EXTERNAL_ASSISTANT_ALLOWED_EMAILS: "other@example.com" do
+      Setting.openai_access_token = nil
+      assert_not @user.ai_available?
+    end
+  ensure
+    Setting.openai_access_token = previous
+    @user.family.update!(assistant_type: "builtin")
+  end
+
+  test "intro layout collapses sidebars and enables ai" do
+    user = User.new(
+      family: families(:empty),
+      email: "intro-new@example.com",
+      password: "Password1!",
+      password_confirmation: "Password1!",
+      role: :guest,
+      ui_layout: :intro
+    )
+
+    assert user.save, user.errors.full_messages.to_sentence
+    assert user.ui_layout_intro?
+    assert_not user.show_sidebar?
+    assert_not user.show_ai_sidebar?
+    assert user.ai_enabled?
+  end
+
+  test "non-guest role cannot persist intro layout" do
+    user = User.new(
+      family: families(:empty),
+      email: "dashboard-only@example.com",
+      password: "Password1!",
+      password_confirmation: "Password1!",
+      role: :member,
+      ui_layout: :intro
+    )
+
+    assert user.save, user.errors.full_messages.to_sentence
+    assert user.ui_layout_dashboard?
+  end
+
+  test "upgrading guest role restores dashboard layout defaults" do
+    user = users(:intro_user)
+    user.update!(role: :member)
+    user.reload
+
+    assert user.ui_layout_dashboard?
+    assert user.show_sidebar?
+    assert user.show_ai_sidebar?
+  end
+
+  test "new member defaults show_ai_sidebar to false when AI is not available" do
+    Rails.application.config.app_mode.stubs(:self_hosted?).returns(true)
+    previous = Setting.openai_access_token
+    with_env_overrides OPENAI_ACCESS_TOKEN: nil, EXTERNAL_ASSISTANT_URL: nil, EXTERNAL_ASSISTANT_TOKEN: nil do
+      Setting.openai_access_token = nil
+      user = User.new(
+        family: families(:empty),
+        email: "member-no-ai@example.com",
+        password: "Password1!",
+        password_confirmation: "Password1!",
+        role: :member
+      )
+      assert user.save, user.errors.full_messages.to_sentence
+      assert_not user.show_ai_sidebar?
+    end
+  ensure
+    Setting.openai_access_token = previous
+  end
+
+  test "new admin defaults show_ai_sidebar to true even when AI is not available" do
+    Rails.application.config.app_mode.stubs(:self_hosted?).returns(true)
+    previous = Setting.openai_access_token
+    with_env_overrides OPENAI_ACCESS_TOKEN: nil, EXTERNAL_ASSISTANT_URL: nil, EXTERNAL_ASSISTANT_TOKEN: nil do
+      Setting.openai_access_token = nil
+      user = User.new(
+        family: families(:empty),
+        email: "admin-no-ai@example.com",
+        password: "Password1!",
+        password_confirmation: "Password1!",
+        role: :admin
+      )
+      assert user.save, user.errors.full_messages.to_sentence
+      assert user.show_ai_sidebar?
+    end
+  ensure
+    Setting.openai_access_token = previous
+  end
+
+  test "new member defaults show_ai_sidebar to true when AI is available" do
+    Rails.application.config.app_mode.stubs(:self_hosted?).returns(false)
+    user = User.new(
+      family: families(:empty),
+      email: "member-with-ai@example.com",
+      password: "Password1!",
+      password_confirmation: "Password1!",
+      role: :member
+    )
+    assert user.save, user.errors.full_messages.to_sentence
+    assert user.show_ai_sidebar?
+  end
+
+  test "new guest defaults show_ai_sidebar to false when AI is not available" do
+    Rails.application.config.app_mode.stubs(:self_hosted?).returns(true)
+    previous = Setting.openai_access_token
+    with_env_overrides OPENAI_ACCESS_TOKEN: nil, EXTERNAL_ASSISTANT_URL: nil, EXTERNAL_ASSISTANT_TOKEN: nil do
+      Setting.openai_access_token = nil
+      user = User.new(
+        family: families(:empty),
+        email: "guest-no-ai@example.com",
+        password: "Password1!",
+        password_confirmation: "Password1!",
+        role: :guest
+      )
+      assert user.save, user.errors.full_messages.to_sentence
+      assert_not user.show_ai_sidebar?
+    end
+  ensure
+    Setting.openai_access_token = previous
+  end
+
+  test "new guest defaults show_ai_sidebar to false when AI is available" do
+    Rails.application.config.app_mode.stubs(:self_hosted?).returns(false)
+    user = User.new(
+      family: families(:empty),
+      email: "guest-with-ai@example.com",
+      password: "Password1!",
+      password_confirmation: "Password1!",
+      role: :guest
+    )
+    assert user.save, user.errors.full_messages.to_sentence
+    assert_not user.show_ai_sidebar?
   end
 
   test "update_dashboard_preferences handles concurrent updates atomically" do
@@ -226,6 +510,45 @@ class UserTest < ActiveSupport::TestCase
     assert_equal new_order, @user.dashboard_section_order
   end
 
+  test "dashboard_section_height returns stored preset or nil" do
+    @user.update!(preferences: {})
+    assert_nil @user.dashboard_section_height("net_worth_chart")
+
+    @user.update_dashboard_preferences({
+      "dashboard_section_layout" => { "net_worth_chart" => { "height" => "tall" } }
+    })
+    @user.reload
+
+    assert_equal "tall", @user.dashboard_section_height("net_worth_chart")
+    assert_nil @user.dashboard_section_height("balance_sheet")
+  end
+
+  test "dashboard_section_width returns stored col_span or nil" do
+    @user.update!(preferences: {})
+    assert_nil @user.dashboard_section_width("cashflow_sankey")
+
+    @user.update_dashboard_preferences({
+      "dashboard_section_layout" => { "cashflow_sankey" => { "col_span" => "single" } }
+    })
+
+    assert_equal "single", @user.reload.dashboard_section_width("cashflow_sankey")
+  end
+
+  test "dashboard_section_layout merges width and height without clobbering" do
+    @user.update!(preferences: {})
+
+    @user.update_dashboard_preferences({
+      "dashboard_section_layout" => { "net_worth_chart" => { "height" => "tall" } }
+    })
+    @user.update_dashboard_preferences({
+      "dashboard_section_layout" => { "net_worth_chart" => { "col_span" => "full" } }
+    })
+    @user.reload
+
+    assert_equal "tall", @user.dashboard_section_height("net_worth_chart")
+    assert_equal "full", @user.dashboard_section_width("net_worth_chart")
+  end
+
   test "handles empty preferences gracefully for dashboard methods" do
     @user.update!(preferences: {})
 
@@ -275,5 +598,162 @@ class UserTest < ActiveSupport::TestCase
     @user.update!(preferences: { "collapsed_sections" => {} })
     assert_not @user.dashboard_section_collapsed?("net_worth_chart"),
       "Should return false when section key is missing from collapsed_sections"
+  end
+
+  # Default account for transactions
+  test "default_account_for_transactions returns account when active and manual" do
+    account = accounts(:depository)
+    @user.update!(default_account: account)
+    assert_equal account, @user.default_account_for_transactions
+  end
+
+  test "default_account_for_transactions returns nil when account is disabled" do
+    account = accounts(:depository)
+    @user.update!(default_account: account)
+    account.disable!
+    assert_nil @user.default_account_for_transactions
+  end
+
+  test "default_account_for_transactions returns nil when account is linked" do
+    account = accounts(:depository)
+    @user.update!(default_account: account)
+    plaid_account = plaid_accounts(:one)
+    AccountProvider.create!(account: account, provider: plaid_account)
+    account.reload
+    assert_nil @user.default_account_for_transactions
+  end
+
+  test "default_account_for_transactions returns nil when no default set" do
+    assert_nil @user.default_account_for_transactions
+  end
+
+  # SSO-only user security tests
+  test "sso_only? returns true for user with OIDC identity and no password" do
+    sso_user = users(:sso_only)
+    assert_nil sso_user.password_digest
+    assert sso_user.oidc_identities.exists?
+    assert sso_user.sso_only?
+  end
+
+  test "sso_only? returns false for user with password and OIDC identity" do
+    # family_admin has both password and OIDC identity
+    assert @user.password_digest.present?
+    assert @user.oidc_identities.exists?
+    assert_not @user.sso_only?
+  end
+
+  test "sso_only? returns false for user with password but no OIDC identity" do
+    user_without_oidc = users(:empty)
+    assert user_without_oidc.password_digest.present?
+    assert_not user_without_oidc.oidc_identities.exists?
+    assert_not user_without_oidc.sso_only?
+  end
+
+  test "has_local_password? returns true when password_digest is present" do
+    assert @user.has_local_password?
+  end
+
+  test "has_local_password? returns false when password_digest is nil" do
+    sso_user = users(:sso_only)
+    assert_not sso_user.has_local_password?
+  end
+
+  test "user can be created without password when skip_password_validation is true" do
+    user = User.new(
+      email: "newssuser@example.com",
+      first_name: "New",
+      last_name: "SSO User",
+      skip_password_validation: true,
+      family: families(:empty)
+    )
+    assert user.valid?, user.errors.full_messages.to_sentence
+    assert user.save
+    assert_nil user.password_digest
+  end
+
+  test "user requires password on create when skip_password_validation is false" do
+    user = User.new(
+      email: "needspassword@example.com",
+      first_name: "Needs",
+      last_name: "Password",
+      family: families(:empty)
+    )
+    assert_not user.valid?
+    assert_includes user.errors[:password], "can't be blank"
+  end
+
+  # First user role assignment tests
+  test "role_for_new_family_creator returns super_admin when no users exist" do
+    # Delete all users to simulate fresh instance
+    User.destroy_all
+
+    assert_equal :super_admin, User.role_for_new_family_creator
+  end
+
+  test "role_for_new_family_creator returns fallback role when users exist" do
+    # Users exist from fixtures
+    assert User.exists?
+
+    assert_equal :admin, User.role_for_new_family_creator
+    assert_equal :member, User.role_for_new_family_creator(fallback_role: :member)
+    assert_equal "custom_role", User.role_for_new_family_creator(fallback_role: "custom_role")
+  end
+
+  # Preview features preference tests
+  test "preview_features_enabled? defaults to false" do
+    @user.update!(preferences: {})
+    assert_not @user.preview_features_enabled?
+  end
+
+  test "preview_features_enabled? true only when explicitly true" do
+    @user.update!(preferences: { "preview_features_enabled" => true })
+    assert @user.preview_features_enabled?
+
+    @user.update!(preferences: { "preview_features_enabled" => false })
+    assert_not @user.preview_features_enabled?
+
+    @user.update!(preferences: { "preview_features_enabled" => "yes" })
+    assert_not @user.preview_features_enabled?, "truthy non-boolean should not enable"
+  end
+
+  # ActiveStorage attachment cleanup tests
+  test "purging a user removes attached profile image" do
+    user = users(:family_admin)
+    user.profile_image.attach(
+      io: StringIO.new("profile-image-data"),
+      filename: "profile.png",
+      content_type: "image/png"
+    )
+
+    attachment_id = user.profile_image.id
+    assert ActiveStorage::Attachment.exists?(attachment_id)
+
+    perform_enqueued_jobs do
+      user.purge
+    end
+
+    assert_not User.exists?(user.id)
+    assert_not ActiveStorage::Attachment.exists?(attachment_id)
+  end
+
+  test "purging the last user cascades to remove family and its export attachments" do
+    family = Family.create!(name: "Solo Family", locale: "en", date_format: "%m-%d-%Y", currency: "USD")
+    user = User.create!(family: family, email: "solo@example.com", password: "password123")
+    export = family.family_exports.create!
+    export.export_file.attach(
+      io: StringIO.new("export-data"),
+      filename: "export.zip",
+      content_type: "application/zip"
+    )
+
+    export_attachment_id = export.export_file.id
+    assert ActiveStorage::Attachment.exists?(export_attachment_id)
+
+    perform_enqueued_jobs do
+      user.purge
+    end
+
+    assert_not Family.exists?(family.id)
+    assert_not ActiveStorage::Attachment.exists?(export_attachment_id)
   end
 end

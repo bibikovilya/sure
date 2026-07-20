@@ -1,10 +1,18 @@
 class Transfer::Creator
-  def initialize(family:, source_account_id:, destination_account_id:, date:, amount:)
+  def initialize(family:, source_account_id:, destination_account_id:, date:, amount:, exchange_rate: nil)
     @family = family
     @source_account = family.accounts.find(source_account_id) # early throw if not found
     @destination_account = family.accounts.find(destination_account_id) # early throw if not found
     @date = date
     @amount = amount.to_d
+
+    if exchange_rate.present?
+      rate_value = exchange_rate.to_d
+      raise ArgumentError, "exchange_rate must be greater than 0" unless rate_value > 0
+      @exchange_rate = rate_value
+    else
+      @exchange_rate = nil
+    end
   end
 
   def create
@@ -23,20 +31,27 @@ class Transfer::Creator
   end
 
   private
-    attr_reader :family, :source_account, :destination_account, :date, :amount
+    attr_reader :family, :source_account, :destination_account, :date, :amount, :exchange_rate
 
     def outflow_transaction
       name = "#{name_prefix} to #{destination_account.name}"
+      kind = outflow_transaction_kind
 
       Transaction.new(
-        kind: outflow_transaction_kind,
+        kind: kind,
+        category: (investment_contributions_category if kind == "investment_contribution"),
         entry: source_account.entries.build(
           amount: amount.abs,
           currency: source_account.currency,
           date: date,
           name: name,
+          user_modified: true, # Protect from provider sync claiming this entry
         )
       )
+    end
+
+    def investment_contributions_category
+      source_account.family.investment_contributions_category
     end
 
     def inflow_transaction
@@ -49,18 +64,19 @@ class Transfer::Creator
           currency: destination_account.currency,
           date: date,
           name: name,
+          user_modified: true, # Protect from provider sync claiming this entry
         )
       )
     end
 
     # If destination account has different currency, its transaction should show up as converted
-    # Future improvement: instead of a 1:1 conversion fallback, add a UI/UX flow for missing rates
+    # Uses user-provided exchange rate if available, otherwise requires a provider rate
     def inflow_converted_money
       Money.new(amount.abs, source_account.currency)
            .exchange_to(
              destination_account.currency,
              date: date,
-             fallback_rate: 1.0
+             custom_rate: exchange_rate
            )
     end
 
@@ -70,9 +86,19 @@ class Transfer::Creator
         "loan_payment"
       elsif destination_account.liability?
         "cc_payment"
+      elsif destination_is_investment? && !source_is_investment?
+        "investment_contribution"
       else
         "funds_movement"
       end
+    end
+
+    def destination_is_investment?
+      destination_account.investment? || destination_account.crypto?
+    end
+
+    def source_is_investment?
+      source_account.investment? || source_account.crypto?
     end
 
     def name_prefix

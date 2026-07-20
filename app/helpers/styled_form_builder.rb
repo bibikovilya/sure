@@ -1,5 +1,10 @@
 class StyledFormBuilder < ActionView::Helpers::FormBuilder
-  class_attribute :text_field_helpers, default: field_helpers - [ :label, :check_box, :radio_button, :fields_for, :fields, :hidden_field, :file_field ]
+  # Rails 8 renamed two field_helpers entries: :text_area -> :textarea and
+  # :check_box -> :checkbox. Exclude both spellings of the non-text helpers, and
+  # alias the legacy method names below so existing `form.text_area` call sites
+  # stay styled. (Harmless on Rails 7.2, where the old names are present instead.)
+  NON_TEXT_FIELD_HELPERS = [ :label, :check_box, :checkbox, :radio_button, :fields_for, :fields, :hidden_field, :file_field ].freeze
+  class_attribute :text_field_helpers, default: field_helpers - NON_TEXT_FIELD_HELPERS
 
   text_field_helpers.each do |selector|
     class_eval <<-RUBY_EVAL, __FILE__, __LINE__ + 1
@@ -13,6 +18,9 @@ class StyledFormBuilder < ActionView::Helpers::FormBuilder
       end
     RUBY_EVAL
   end
+
+  # Keep `form.text_area` styled after Rails 8 renamed the helper to `textarea`.
+  alias_method :text_area, :textarea if method_defined?(:textarea)
 
   def radio_button(method, tag_value, options = {})
     merged_options = { class: "form-field__radio" }.merge(options)
@@ -28,11 +36,31 @@ class StyledFormBuilder < ActionView::Helpers::FormBuilder
   end
 
   def collection_select(method, collection, value_method, text_method, options = {}, html_options = {})
-    field_options = normalize_options(options, html_options)
+    selected_value =
+      if options.key?(:selected)
+        options[:selected]
+      elsif @object.respond_to?(method)
+        @object.public_send(method)
+      end
+    placeholder = options[:prompt] || options[:include_blank] || options[:placeholder] || I18n.t("helpers.select.default_label")
 
-    build_field(method, field_options, html_options) do |merged_html_options|
-      super(method, collection, value_method, text_method, options, merged_html_options)
-    end
+    @template.render(
+      DS::Select.new(
+        form: self,
+        method: method,
+        items: collection.map { |item| { value: item.public_send(value_method), label: item.public_send(text_method), object: item } },
+        selected: selected_value,
+        placeholder: placeholder,
+        searchable: options.fetch(:searchable, false),
+        menu_placement: options[:menu_placement],
+        variant: options.fetch(:variant, :simple),
+        include_blank: options[:include_blank],
+        label: options[:label],
+        container_class: options[:container_class],
+        label_tooltip: options[:label_tooltip],
+        html_options: html_options
+      )
+    )
   end
 
   def money_field(amount_method, options = {})
@@ -69,6 +97,7 @@ class StyledFormBuilder < ActionView::Helpers::FormBuilder
     @template.render(
       DS::Button.new(
         text: value,
+        type: "submit",
         data: (options[:data] || {}).merge({ turbo_submits_with: "Submitting..." }),
         full_width: true
       )

@@ -9,6 +9,7 @@ class Rule::ActionExecutor::SetTransactionCategory < Rule::ActionExecutor
 
   def execute(transaction_scope, value: nil, ignore_attribute_locks: false, rule_run: nil)
     category = family.categories.find_by_id(value)
+    return 0 unless category
 
     scope = transaction_scope
 
@@ -21,7 +22,8 @@ class Rule::ActionExecutor::SetTransactionCategory < Rule::ActionExecutor
       txn.enrich_attribute(
         :category_id,
         category.id,
-        source: "rule"
+        source: "rule",
+        ignore_locks: ignore_attribute_locks
       )
     end
   end

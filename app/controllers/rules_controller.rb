@@ -11,7 +11,7 @@ class RulesController < ApplicationController
     @sort_by = "name" unless allowed_columns.include?(@sort_by)
     @direction = "asc" unless [ "asc", "desc" ].include?(@direction)
 
-    @rules = Current.family.rules.order(@sort_by => @direction)
+    @rules = Current.family.rules.includes(conditions: :sub_conditions).order(@sort_by => @direction)
 
     # Fetch recent rule runs with pagination
     recent_runs_scope = RuleRun
@@ -20,7 +20,7 @@ class RulesController < ApplicationController
                           .recent
                           .includes(:rule)
 
-    @pagy, @recent_runs = pagy(recent_runs_scope, limit: params[:per_page] || 20, page_param: :runs_page)
+    @pagy, @recent_runs = pagy(recent_runs_scope, limit: safe_per_page, page_param: :runs_page)
 
     render layout: "settings"
   end
@@ -86,8 +86,8 @@ class RulesController < ApplicationController
   def update
     if @rule.update(rule_params)
       respond_to do |format|
-        format.html { redirect_back_or_to rules_path, notice: "Rule updated" }
-        format.turbo_stream { stream_redirect_back_or_to rules_path, notice: "Rule updated" }
+        format.html { redirect_back_or_to rules_path, notice: t(".success") }
+        format.turbo_stream { stream_redirect_back_or_to rules_path, notice: t(".success") }
       end
     else
       render :edit, status: :unprocessable_entity
@@ -96,12 +96,41 @@ class RulesController < ApplicationController
 
   def destroy
     @rule.destroy
-    redirect_to rules_path, notice: "Rule deleted"
+    redirect_to rules_path, notice: t(".success")
   end
 
   def destroy_all
     Current.family.rules.destroy_all
-    redirect_to rules_path, notice: "All rules deleted"
+    redirect_to rules_path, notice: t(".success")
+  end
+
+  def confirm_all
+    @rules = Current.family.rules
+    @total_affected_count = Rule.total_affected_resource_count(@rules)
+
+    # Compute AI cost estimation if any rule has auto_categorize action
+    if @rules.any? { |r| r.actions.any? { |a| a.action_type == "auto_categorize" } }
+      llm_provider = Provider::Registry.get_provider(:openai)
+
+      if llm_provider
+        @selected_model = Provider::Openai.effective_model
+        @estimated_cost = LlmUsage.estimate_auto_categorize_cost(
+          transaction_count: @total_affected_count,
+          category_count: Current.family.categories.count,
+          model: @selected_model
+        )
+      end
+    end
+  end
+
+  def apply_all
+    ApplyAllRulesJob.perform_later(Current.family)
+    redirect_back_or_to rules_path, notice: t("rules.apply_all.success")
+  end
+
+  def clear_ai_cache
+    ClearAiCacheJob.perform_later(Current.family)
+    redirect_to rules_path, notice: t("rules.clear_ai_cache.success")
   end
 
   private

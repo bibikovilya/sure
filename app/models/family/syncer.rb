@@ -9,11 +9,6 @@ class Family::Syncer
     # We don't rely on this value to guard the app, but keep it eventually consistent
     family.sync_trial_status!
 
-    Rails.logger.info("Applying rules for family #{family.id}")
-    family.rules.each do |rule|
-      rule.apply_later
-    end
-
     # Schedule child syncs
     child_syncables.each do |syncable|
       syncable.sync_later(parent_sync: sync, window_start_date: sync.window_start_date, window_end_date: sync.window_end_date)
@@ -22,15 +17,34 @@ class Family::Syncer
 
   def perform_post_sync
     family.auto_match_transfers!
+
+    Rails.logger.info("Applying rules for family #{family.id}")
+    family.rules.where(active: true).each do |rule|
+      rule.apply_later
+    end
   end
 
   private
+
+    # Collect all syncable provider items via reflection so new `*_items`
+    # integrations participate in nightly family sync as soon as they include
+    # Syncable and expose a `syncable` scope.
     def child_syncables
-      family.plaid_items +
-        family.simplefin_items.active +
-        family.lunchflow_items.active +
-        family.enable_banking_items.active +
-        family.priorbank_items.active +
-        family.accounts.manual
+      provider_items = syncable_item_associations.flat_map do |association|
+        family.public_send(association).syncable
+      end
+
+      provider_items + family.accounts.manual
+    end
+
+    def syncable_item_associations
+      Family.reflect_on_all_associations(:has_many).filter_map do |association|
+        next unless association.name.to_s.end_with?("_items")
+        next unless association.klass.included_modules.include?(Syncable)
+
+        association.name
+      rescue NameError
+        nil
+      end
     end
 end

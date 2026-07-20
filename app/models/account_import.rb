@@ -18,10 +18,19 @@ class AccountImport < Import
         account.save!
 
         manager = Account::OpeningBalanceManager.new(account)
-        result = manager.set_opening_balance(
-          balance: row.amount.to_d,
-          date: row.opening_date&.to_date
-        )
+
+        # Parse date if provided, otherwise use default
+        balance_date = if row.date.present?
+          begin
+            Date.strptime(row.date, date_format)
+          rescue ArgumentError => e
+            raise OpeningBalanceError, "Invalid date format for '#{row.date}': #{e.message}"
+          end
+        else
+          nil
+        end
+
+        result = manager.set_opening_balance(balance: row.amount.to_d, date: balance_date)
 
         # Re-raise since we should never have an error here
         if result.error
@@ -40,21 +49,21 @@ class AccountImport < Import
   end
 
   def column_keys
-    %i[entity_type name amount currency opening_date]
+    %i[entity_type name amount currency date]
   end
 
   def dry_run
     {
-      accounts: rows.count
+      accounts: rows_count
     }
   end
 
   def csv_template
-    template = <<-CSV
-      Account type*,Name*,Balance*,Currency,Opening date
+    template = <<~CSV
+      Account type*,Name*,Balance*,Currency,Balance Date
       Checking,Main Checking Account,1000.00,USD,2024-01-01
-      Savings,Emergency Fund,5000.00,USD,2024-01-01
-      Credit Card,Rewards Card,-500.00,USD,2024-01-01
+      Savings,Emergency Fund,5000.00,USD,2024-01-15
+      Credit Card,Rewards Card,-500.00,USD,2024-02-01
     CSV
 
     CSV.parse(template, headers: true)

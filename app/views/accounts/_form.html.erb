@@ -54,6 +54,13 @@
       <%= form.money_field :balance, label: t(".balance"), required: true, default_currency: Current.family.currency %>
     <% end %>
 
+    <% if account.new_record? && !account.linked? %>
+      <%= form.date_field :opening_balance_date,
+          label: t(".opening_balance_date_label"),
+          value: Time.zone.today - 2.years,
+          required: true %>
+    <% end %>
+
     <%= yield form %>
 
     <details class="group">
@@ -75,6 +82,11 @@
             label: t(".notes_label"),
             placeholder: t(".notes_placeholder"),
             rows: 4 %>
+
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-sm"><%= t(".exclude_from_reports") %></span>
+          <%= form.toggle :exclude_from_reports %>
+        </div>
       </div>
     </details>
   </div>

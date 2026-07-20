@@ -10,11 +10,16 @@ module Sure
       else
         `git rev-parse HEAD`.chomp
       end
+    rescue Errno::ENOENT
+      nil
     end
 
     private
       def semver
-        "0.6.6-ib.6"
+        stripped_content = Rails.root.join(".sure-version").read.strip
+        stripped_content.presence || "n/a: #{commit_sha}"
+      rescue Errno::ENOENT
+        "n/a: #{commit_sha || 'unknown'}"
       end
   end
 end

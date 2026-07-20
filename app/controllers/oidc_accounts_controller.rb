@@ -7,23 +7,26 @@ class OidcAccountsController < ApplicationController
     @pending_auth = session[:pending_oidc_auth]
 
     if @pending_auth.nil?
-      redirect_to new_session_path, alert: "No pending OIDC authentication found"
+      redirect_to new_session_path, alert: t(".no_pending_oidc")
       return
     end
 
     @email = @pending_auth["email"]
     @user_exists = User.exists?(email: @email) if @email.present?
 
+    # Check for a pending invitation for this email
+    @pending_invitation = Invitation.pending.find_by(email: @email) if @email.present?
+
     # Determine whether we should offer JIT account creation for this
     # pending auth, based on JIT mode and allowed domains.
-    @allow_account_creation = !AuthConfig.jit_link_only? && AuthConfig.allowed_oidc_domain?(@email)
+    @allow_account_creation = @pending_invitation.present? || (!AuthConfig.jit_link_only? && AuthConfig.allowed_oidc_domain?(@email))
   end
 
   def create_link
     @pending_auth = session[:pending_oidc_auth]
 
     if @pending_auth.nil?
-      redirect_to new_session_path, alert: "No pending OIDC authentication found"
+      redirect_to new_session_path, alert: t(".no_pending_oidc")
       return
     end
 
@@ -37,16 +40,27 @@ class OidcAccountsController < ApplicationController
         user
       )
 
+      # Log account linking
+      SsoAuditLog.log_link!(
+        user: user,
+        provider: @pending_auth["provider"],
+        request: request
+      )
+
       # Clear pending auth from session
       session.delete(:pending_oidc_auth)
 
-      # Check if user has MFA enabled
       if user.otp_required?
         session[:mfa_user_id] = user.id
         redirect_to verify_mfa_path
       else
         @session = create_session_for(user)
-        redirect_to root_path, notice: "Account successfully linked to #{@pending_auth['provider']}"
+        notice = if accept_pending_invitation_for(user)
+          t("invitations.accept_choice.joined_household")
+        else
+          t("sessions.openid_connect.account_linked", provider: @pending_auth["provider"])
+        end
+        redirect_to root_path, notice: notice
       end
     else
       @email = params[:email]
@@ -61,7 +75,7 @@ class OidcAccountsController < ApplicationController
     @pending_auth = session[:pending_oidc_auth]
 
     if @pending_auth.nil?
-      redirect_to new_session_path, alert: "No pending OIDC authentication found"
+      redirect_to new_session_path, alert: t(".no_pending_oidc")
       return
     end
 
@@ -77,47 +91,82 @@ class OidcAccountsController < ApplicationController
     @pending_auth = session[:pending_oidc_auth]
 
     if @pending_auth.nil?
-      redirect_to new_session_path, alert: "No pending OIDC authentication found"
+      redirect_to new_session_path, alert: t(".no_pending_oidc")
       return
     end
 
     email = @pending_auth["email"]
 
+    # Check for a pending invitation for this email
+    invitation = Invitation.pending.find_by(email: email)
+
     # Respect global JIT configuration: in link_only mode or when the email
-    # domain is not allowed, block JIT account creation and send the user
-    # back to the login page with a clear message.
-    unless !AuthConfig.jit_link_only? && AuthConfig.allowed_oidc_domain?(email)
-      redirect_to new_session_path, alert: "SSO account creation is disabled. Please contact an administrator."
+    # domain is not allowed, block JIT account creation—unless there's a
+    # pending invitation for this user.
+    unless invitation.present? || (!AuthConfig.jit_link_only? && AuthConfig.allowed_oidc_domain?(email))
+      redirect_to new_session_path, alert: t(".account_creation_disabled")
       return
     end
 
-    # Create user with a secure random password since they're using SSO
-    secure_password = SecureRandom.base58(32)
+    # Create SSO-only user without local password.
+    # Security: JIT users should NOT have password_digest set to prevent
+    # chained authentication attacks where SSO users gain local login access
+    # via password reset.
+    # Allow user to edit first_name and last_name from the form, but email comes from OIDC
+    user_params = params.fetch(:user, {}).permit(:first_name, :last_name)
     @user = User.new(
       email: email,
-      first_name: @pending_auth["first_name"],
-      last_name: @pending_auth["last_name"],
-      password: secure_password,
-      password_confirmation: secure_password
+      first_name: user_params[:first_name].presence || @pending_auth["first_name"],
+      last_name: user_params[:last_name].presence || @pending_auth["last_name"],
+      skip_password_validation: true
     )
 
-    # Create new family for this user
-    @user.family = Family.new
-    @user.role = :admin
+    if invitation.present?
+      # Accept the pending invitation: join the existing family
+      @user.family_id = invitation.family_id
+      @user.role = invitation.role
+    else
+      # Create new family for this user
+      @user.family = Family.new
+
+      # Use provider-configured default role, or fall back to admin for family creators
+      # First user of an instance always becomes super_admin regardless of provider config
+      provider_config = Rails.configuration.x.auth.sso_providers&.find { |p| p[:name] == @pending_auth["provider"] }
+      provider_default_role = provider_config&.dig(:settings, :default_role)
+      @user.role = User.role_for_new_family_creator(fallback_role: provider_default_role || :admin)
+    end
 
     if @user.save
       # Create the OIDC (or other SSO) identity
-      OidcIdentity.create_from_omniauth(
+      identity = OidcIdentity.create_from_omniauth(
         build_auth_hash(@pending_auth),
         @user
       )
 
+      # Only log JIT account creation if identity was successfully created
+      if identity.persisted?
+        SsoAuditLog.log_jit_account_created!(
+          user: @user,
+          provider: @pending_auth["provider"],
+          request: request
+        )
+      end
+
+      # Mark invitation as accepted if one was used
+      invitation&.update!(accepted_at: Time.current)
+
       # Clear pending auth from session
       session.delete(:pending_oidc_auth)
 
-      # Create session and log them in
       @session = create_session_for(@user)
-      redirect_to root_path, notice: "Welcome! Your account has been created."
+      notice = if invitation.present?
+        t("invitations.accept_choice.joined_household")
+      elsif accept_pending_invitation_for(@user)
+        t("invitations.accept_choice.joined_household")
+      else
+        t(".account_created")
+      end
+      redirect_to root_path, notice: notice
     else
       render :new_user, status: :unprocessable_entity
     end

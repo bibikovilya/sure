@@ -58,7 +58,7 @@ module LanguagesHelper
     uk: "Ukrainian",
     vi: "Vietnamese",
     'zh-CN': "简体中文",
-    'zh-TW': "Chinese (Traditional)",
+    'zh-TW': "繁體中文",
     af: "Afrikaans",
     az: "Azerbaijani",
     be: "Belarusian",
@@ -155,15 +155,21 @@ module LanguagesHelper
 
   # Locales with complete/extensive translations
   SUPPORTED_LOCALES = [
-    "en",   # English - 62 translation files
-    "de",   # German - 62 translation files
-    "es",   # Spanish - 61 translation files
-    "tr",   # Turkish - 58 translation files
-    "nb",   # Norwegian Bokmål - 57 translation files
-    "ca",   # Catalan - 57 translation files
-    "ro",   # Romanian - 62 translation files
-    "pt-BR", # Brazilian Portuguese - 60 translation files
-    "zh-CN"  # Chinese (Simplified) - 59 translation files
+    "en",   # English
+    "fr",   # French
+    "de",   # German
+    "es",   # Spanish
+    "tr",   # Turkish
+    "nb",   # Norwegian Bokmål
+    "ca",   # Catalan
+    "ro",   # Romanian
+    "pl",   # Polish
+    "pt-BR", # Brazilian Portuguese
+    "zh-CN", # Chinese (Simplified)
+    "zh-TW",  # Chinese (Traditional)
+    "nl",   # Dutch
+    "hu",   # Hungarian
+    "vi"    # Vietnamese
   ].freeze
 
   COUNTRY_MAPPING = {
@@ -258,6 +264,7 @@ module LanguagesHelper
     KP: "🇰🇵 North Korea",
     KR: "🇰🇷 South Korea",
     KW: "🇰🇼 Kuwait",
+    XK: "🇽🇰 Kosovo",
     KG: "🇰🇬 Kyrgyzstan",
     LA: "🇱🇦 Laos",
     LV: "🇱🇻 Latvia",
@@ -298,6 +305,7 @@ module LanguagesHelper
     NO: "🇳🇴 Norway",
     OM: "🇴🇲 Oman",
     PK: "🇵🇰 Pakistan",
+    PS: "🇵🇸 Palestine",
     PW: "🇵🇼 Palau",
     PA: "🇵🇦 Panama",
     PG: "🇵🇬 Papua New Guinea",
@@ -364,7 +372,12 @@ module LanguagesHelper
   }.freeze
 
   def country_options
-    COUNTRY_MAPPING.keys.map { |key| [ COUNTRY_MAPPING[key], key ] }
+    COUNTRY_MAPPING.keys.map do |key|
+      english = COUNTRY_MAPPING[key]
+      emoji, name = english.split(" ", 2)
+      label = I18n.t("countries.#{key}", default: name)
+      [ "#{emoji} #{label}", key ]
+    end
   end
 
   def language_options

@@ -15,6 +15,8 @@ module Enrichable
   InvalidAttributeError = Class.new(StandardError)
 
   included do
+    has_many :data_enrichments, as: :enrichable, dependent: :destroy
+
     scope :enrichable, ->(attrs) {
       attrs = Array(attrs).map(&:to_s)
       json_condition = attrs.each_with_object({}) { |attr, hash| hash[attr] = true }
@@ -22,21 +24,37 @@ module Enrichable
     }
   end
 
+  class_methods do
+    # Override in models to define family-scoped query
+    def family_scope(family)
+      none
+    end
+
+    def clear_ai_cache(family)
+      count = 0
+      family_scope(family).find_each do |record|
+        record.clear_ai_cache
+        count += 1
+      end
+      count
+    end
+  end
+
   # Convenience method for a single attribute
-  def enrich_attribute(attr, value, source:, metadata: {})
-    enrich_attributes({ attr => value }, source:, metadata:)
+  def enrich_attribute(attr, value, source:, metadata: {}, ignore_locks: false)
+    enrich_attributes({ attr => value }, source:, metadata:, ignore_locks:)
   end
 
   # Enriches and logs all attributes that:
-  # - Are not locked
+  # - Are not locked (unless ignore_locks: true, e.g. an explicit rule re-apply)
   # - Are not ignored
   # - Have changed value from the last saved value
   # Returns true if any attributes were actually changed, false otherwise
-  def enrich_attributes(attrs, source:, metadata: {})
+  def enrich_attributes(attrs, source:, metadata: {}, ignore_locks: false)
     # Track current values before modification for virtual attributes (like tag_ids)
     current_values = {}
     enrichable_attrs = Array(attrs).reject do |attr_key, attr_value|
-      if locked?(attr_key) || ignored_enrichable_attributes.include?(attr_key)
+      if (locked?(attr_key) && !ignore_locks) || ignored_enrichable_attributes.include?(attr_key)
         true
       else
         # For virtual attributes (like tag_ids), use the getter method
@@ -121,6 +139,29 @@ module Enrichable
   def lock_saved_attributes!
     saved_changes.keys.reject { |attr| ignored_enrichable_attributes.include?(attr) }.each do |attr|
       lock_attr!(attr)
+    end
+  end
+
+  def clear_ai_cache
+    ActiveRecord::Base.transaction do
+      ai_enrichments = data_enrichments.where(source: "ai")
+
+      # Only unlock attributes where current value still matches what AI set
+      # If user changed the value, they took ownership - don't unlock
+      attrs_to_unlock = ai_enrichments.select do |enrichment|
+        attr_name = enrichment.attribute_name
+        current_value = respond_to?(attr_name) ? send(attr_name) : self[attr_name]
+        current_value.to_s == enrichment.value.to_s
+      end.map(&:attribute_name).uniq
+
+      # Batch unlock in a single update
+      if attrs_to_unlock.any?
+        new_locked_attrs = locked_attributes.except(*attrs_to_unlock)
+        update_column(:locked_attributes, new_locked_attrs) if new_locked_attrs != locked_attributes
+      end
+
+      # Delete AI enrichment records
+      ai_enrichments.delete_all
     end
   end
 

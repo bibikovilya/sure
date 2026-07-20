@@ -1,30 +1,46 @@
 class Settings::HostingsController < ApplicationController
   layout "settings"
 
+  # Minimum accepted value for each configurable LLM budget field. Mirrors the
+  # `min:` attribute on the form inputs in `_openai_settings.html.erb` so the
+  # controller rejects what the browser-side validator would reject.
+  LLM_BUDGET_MINIMUMS = {
+    llm_context_window: 256,
+    llm_max_response_tokens: 64,
+    llm_max_items_per_call: 1
+  }.freeze
+
   guard_feature unless: -> { self_hosted? }
 
-  before_action :ensure_admin, only: [ :update, :clear_cache ]
+  before_action :ensure_admin, only: [ :update, :clear_cache, :disconnect_external_assistant ]
+  before_action :ensure_super_admin_for_onboarding, only: :update
 
   def show
     @breadcrumbs = [
-      [ "Home", root_path ],
-      [ "Self-Hosting", nil ]
+      [ t("breadcrumbs.home"), root_path ],
+      [ t("breadcrumbs.self_hosting"), nil ]
     ]
 
     # Determine which providers are currently selected
     exchange_rate_provider = ENV["EXCHANGE_RATE_PROVIDER"].presence || Setting.exchange_rate_provider
-    securities_provider = ENV["SECURITIES_PROVIDER"].presence || Setting.securities_provider
+    enabled_securities = Setting.enabled_securities_providers
 
-    # Show Twelve Data settings if either provider is set to twelve_data
-    @show_twelve_data_settings = exchange_rate_provider == "twelve_data" || securities_provider == "twelve_data"
-
-    # Show Yahoo Finance settings if either provider is set to yahoo_finance
-    @show_yahoo_finance_settings = exchange_rate_provider == "yahoo_finance" || securities_provider == "yahoo_finance"
+    # Show provider settings if used for FX or enabled for securities
+    @show_twelve_data_settings = exchange_rate_provider == "twelve_data" || enabled_securities.include?("twelve_data")
+    @show_yahoo_finance_settings = exchange_rate_provider == "yahoo_finance" || enabled_securities.include?("yahoo_finance")
+    @show_tiingo_settings = enabled_securities.include?("tiingo")
+    @show_eodhd_settings = enabled_securities.include?("eodhd")
+    @show_alpha_vantage_settings = enabled_securities.include?("alpha_vantage")
+    # T-Invest doubles as a brand-logo source consulted regardless of the price
+    # provider, so its token is useful even when it's not enabled for prices.
+    # Always surface the token field, decoupled from the securities checklist.
+    @show_tinkoff_invest_settings = true
 
     # Only fetch provider data if we're showing the section
     if @show_twelve_data_settings
       twelve_data_provider = Provider::Registry.get_provider(:twelve_data)
       @twelve_data_usage = twelve_data_provider&.usage
+      @plan_restricted_securities = Current.family.securities_with_plan_restrictions(provider: "TwelveData")
     end
 
     if @show_yahoo_finance_settings
@@ -44,13 +60,20 @@ class Settings::HostingsController < ApplicationController
       Setting.require_email_confirmation = hosting_params[:require_email_confirmation]
     end
 
+    if hosting_params.key?(:invite_only_default_family_id)
+      value = hosting_params[:invite_only_default_family_id].presence
+      Setting.invite_only_default_family_id = value
+    end
+
     if hosting_params.key?(:brand_fetch_client_id)
       Setting.brand_fetch_client_id = hosting_params[:brand_fetch_client_id]
     end
 
-    if hosting_params.key?(:twelve_data_api_key)
-      Setting.twelve_data_api_key = hosting_params[:twelve_data_api_key]
+    if hosting_params.key?(:brand_fetch_high_res_logos)
+      Setting.brand_fetch_high_res_logos = hosting_params[:brand_fetch_high_res_logos] == "1"
     end
+
+    update_encrypted_setting(:twelve_data_api_key)
 
     if hosting_params.key?(:exchange_rate_provider)
       Setting.exchange_rate_provider = hosting_params[:exchange_rate_provider]
@@ -58,6 +81,68 @@ class Settings::HostingsController < ApplicationController
 
     if hosting_params.key?(:securities_provider)
       Setting.securities_provider = hosting_params[:securities_provider]
+    end
+
+    if hosting_params.key?(:securities_providers)
+      new_providers = Array(hosting_params[:securities_providers]).reject(&:blank?) & Security.valid_price_providers
+      old_providers = Setting.enabled_securities_providers
+
+      Setting.securities_providers = new_providers.join(",")
+
+      # Clear the legacy singular setting so the fallback in
+      # enabled_securities_providers doesn't re-enable a provider
+      # the user just unchecked.
+      Setting.securities_provider = nil if new_providers.empty?
+
+      # Mark securities linked to removed providers as offline so they aren't
+      # silently queried against an incompatible fallback provider (e.g. MFAPI
+      # scheme codes sent to TwelveData). The price_provider is preserved so
+      # provider_status can report :provider_unavailable.
+      removed = old_providers - new_providers
+      removed.each do |removed_provider|
+        Security.where(price_provider: removed_provider, offline: false)
+                .in_batches.update_all(offline: true, offline_reason: "provider_disabled")
+      end
+
+      # Bring securities back online when their provider is re-enabled — but only
+      # those that were taken offline by a provider toggle, not by health checks.
+      added = new_providers - old_providers
+      added.each do |added_provider|
+        Security.where(price_provider: added_provider, offline: true, offline_reason: "provider_disabled")
+                .in_batches.update_all(offline: false, offline_reason: nil, failed_fetch_count: 0, failed_fetch_at: nil)
+      end
+    end
+
+    update_encrypted_setting(:tiingo_api_key)
+    update_encrypted_setting(:eodhd_api_key)
+    update_encrypted_setting(:alpha_vantage_api_key)
+    update_encrypted_setting(:tinkoff_invest_api_key)
+
+    if hosting_params.key?(:syncs_include_pending)
+      Setting.syncs_include_pending = hosting_params[:syncs_include_pending] == "1"
+    end
+
+    sync_settings_changed = false
+
+    if hosting_params.key?(:auto_sync_enabled)
+      Setting.auto_sync_enabled = hosting_params[:auto_sync_enabled] == "1"
+      sync_settings_changed = true
+    end
+
+    if hosting_params.key?(:auto_sync_time)
+      time_value = hosting_params[:auto_sync_time]
+      unless Setting.valid_auto_sync_time?(time_value)
+        flash[:alert] = t(".invalid_sync_time")
+        return redirect_to settings_hosting_path
+      end
+
+      Setting.auto_sync_time = time_value
+      Setting.auto_sync_timezone = current_user_timezone
+      sync_settings_changed = true
+    end
+
+    if sync_settings_changed
+      sync_auto_sync_scheduler!
     end
 
     if hosting_params.key?(:openai_access_token)
@@ -88,8 +173,91 @@ class Settings::HostingsController < ApplicationController
       Setting.openai_json_mode = hosting_params[:openai_json_mode].presence
     end
 
+    if hosting_params.key?(:anthropic_access_token)
+      token_param = hosting_params[:anthropic_access_token].to_s.strip
+      unless token_param.blank? || token_param == "********"
+        Setting.anthropic_access_token = token_param
+      end
+    end
+
+    if hosting_params.key?(:anthropic_base_url)
+      raw_base_url = hosting_params[:anthropic_base_url].to_s.strip
+      if raw_base_url.blank?
+        Setting.anthropic_base_url = nil
+      else
+        parsed = URI.parse(raw_base_url) rescue nil
+        unless parsed.is_a?(URI::HTTP)
+          raise Setting::ValidationError, t(".invalid_anthropic_base_url")
+        end
+        # A custom Anthropic-compatible endpoint requires a model — Provider::Anthropic
+        # raises without one. Validate the pair together (mirrors the OpenAI branch), using
+        # the submitted model when present so a blanked model field is caught too.
+        effective_model =
+          if hosting_params.key?(:anthropic_model)
+            hosting_params[:anthropic_model].to_s.strip
+          else
+            Setting.anthropic_model.to_s.strip
+          end
+        if effective_model.blank?
+          raise Setting::ValidationError, t(".anthropic_model_required_for_base_url")
+        end
+        Setting.anthropic_base_url = raw_base_url
+      end
+    end
+
+    if hosting_params.key?(:anthropic_model)
+      Setting.anthropic_model = hosting_params[:anthropic_model].presence
+    end
+
+    if hosting_params.key?(:llm_provider)
+      provider = hosting_params[:llm_provider].to_s
+      if %w[openai anthropic].include?(provider)
+        Setting.llm_provider = provider
+      end
+    end
+
+    LLM_BUDGET_MINIMUMS.each do |key, minimum|
+      next unless hosting_params.key?(key)
+      raw = hosting_params[key].to_s.strip
+      if raw.blank?
+        Setting.public_send("#{key}=", nil)
+        next
+      end
+      parsed = Integer(raw, 10) rescue nil
+      if parsed.nil? || parsed < minimum
+        label = t("settings.hostings.openai_settings.#{key}_label")
+        raise Setting::ValidationError, t(".invalid_llm_budget", field: label, minimum: minimum)
+      end
+      Setting.public_send("#{key}=", parsed)
+    end
+
+    if hosting_params.key?(:external_assistant_url)
+      Setting.external_assistant_url = hosting_params[:external_assistant_url]
+    end
+
+    if hosting_params.key?(:external_assistant_token)
+      token_param = hosting_params[:external_assistant_token].to_s.strip
+      unless token_param.blank? || token_param == "********"
+        Setting.external_assistant_token = token_param
+      end
+    end
+
+    if hosting_params.key?(:external_assistant_agent_id)
+      Setting.external_assistant_agent_id = hosting_params[:external_assistant_agent_id]
+    end
+
+    update_assistant_type
+
     redirect_to settings_hosting_path, notice: t(".success")
   rescue Setting::ValidationError => error
+    # Preserve user-submitted OpenAI config so the form re-renders with their
+    # input intact (issue #1824). The form auto-submits on blur, so a partial
+    # entry (e.g. URI base before model) hits validation and would otherwise
+    # be wiped because the view reads from the unchanged Setting.* values.
+    @openai_uri_base_input = hosting_params[:openai_uri_base] if hosting_params.key?(:openai_uri_base)
+    @openai_model_input = hosting_params[:openai_model] if hosting_params.key?(:openai_model)
+    @anthropic_base_url_input = hosting_params[:anthropic_base_url] if hosting_params.key?(:anthropic_base_url)
+    @anthropic_model_input = hosting_params[:anthropic_model] if hosting_params.key?(:anthropic_model)
     flash.now[:alert] = error.message
     render :show, status: :unprocessable_entity
   end
@@ -99,12 +267,56 @@ class Settings::HostingsController < ApplicationController
     redirect_to settings_hosting_path, notice: t(".cache_cleared")
   end
 
+  def disconnect_external_assistant
+    Setting.external_assistant_url = nil
+    Setting.external_assistant_token = nil
+    Setting.external_assistant_agent_id = nil
+    Current.family.update!(assistant_type: "builtin") unless ENV["ASSISTANT_TYPE"].present?
+    redirect_to settings_hosting_path, notice: t(".external_assistant_disconnected")
+  rescue => e
+    Rails.logger.error("[External Assistant] Disconnect failed: #{e.message}")
+    redirect_to settings_hosting_path, alert: t("settings.hostings.update.failure")
+  end
+
   private
     def hosting_params
-      params.require(:setting).permit(:onboarding_state, :require_email_confirmation, :brand_fetch_client_id, :twelve_data_api_key, :openai_access_token, :openai_uri_base, :openai_model, :openai_json_mode, :exchange_rate_provider, :securities_provider)
+      return ActionController::Parameters.new unless params.key?(:setting)
+      params.require(:setting).permit(:onboarding_state, :require_email_confirmation, :invite_only_default_family_id, :brand_fetch_client_id, :brand_fetch_high_res_logos, :twelve_data_api_key, :tiingo_api_key, :eodhd_api_key, :alpha_vantage_api_key, :tinkoff_invest_api_key, :openai_access_token, :openai_uri_base, :openai_model, :openai_json_mode, :anthropic_access_token, :anthropic_base_url, :anthropic_model, :llm_provider, :llm_context_window, :llm_max_response_tokens, :llm_max_items_per_call, :exchange_rate_provider, :securities_provider, :syncs_include_pending, :auto_sync_enabled, :auto_sync_time, :external_assistant_url, :external_assistant_token, :external_assistant_agent_id, securities_providers: [])
+    end
+
+    def update_assistant_type
+      return unless params[:family].present? && params[:family][:assistant_type].present?
+      return if ENV["ASSISTANT_TYPE"].present?
+
+      assistant_type = params[:family][:assistant_type]
+      Current.family.update!(assistant_type: assistant_type) if Family::ASSISTANT_TYPES.include?(assistant_type)
     end
 
     def ensure_admin
       redirect_to settings_hosting_path, alert: t(".not_authorized") unless Current.user.admin?
+    end
+
+    def ensure_super_admin_for_onboarding
+      onboarding_params = %i[onboarding_state invite_only_default_family_id]
+      return unless onboarding_params.any? { |p| hosting_params.key?(p) }
+      redirect_to settings_hosting_path, alert: t(".not_authorized") unless Current.user.super_admin?
+    end
+
+    def sync_auto_sync_scheduler!
+      AutoSyncScheduler.sync!
+    rescue StandardError => error
+      Rails.logger.error("[AutoSyncScheduler] Failed to sync scheduler: #{error.message}")
+      Rails.logger.error(error.backtrace.join("\n"))
+      flash[:alert] = t(".scheduler_sync_failed")
+    end
+
+    def update_encrypted_setting(param_key)
+      return unless hosting_params.key?(param_key)
+      value = hosting_params[param_key].to_s.strip
+      Setting.public_send(:"#{param_key}=", value) unless value.blank? || value == "********"
+    end
+
+    def current_user_timezone
+      Current.family&.timezone.presence || "UTC"
     end
 end

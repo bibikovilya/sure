@@ -21,6 +21,28 @@ class CategoryTest < ActiveSupport::TestCase
     assert_nil transactions.map { |t| t.reload.category }.uniq.first
   end
 
+  test "destroying parent category preserves subcategory transaction assignments" do
+    parent = @family.categories.create!(
+      name: "Parent With Child Transactions",
+      color: "#000000",
+      lucide_icon: "folder"
+    )
+    subcategory = @family.categories.create!(
+      name: "Child With Transactions",
+      color: "#111111",
+      lucide_icon: "folder",
+      parent: parent
+    )
+    transaction = Transaction.create!(category: subcategory)
+
+    assert_difference "Category.count", -1 do
+      parent.destroy!
+    end
+
+    assert_nil subcategory.reload.parent_id
+    assert_equal subcategory, transaction.reload.category
+  end
+
   test "subcategory can only be one level deep" do
     category = categories(:subcategory)
 
@@ -29,5 +51,30 @@ class CategoryTest < ActiveSupport::TestCase
     end
 
     assert_equal "Validation failed: Parent can't have more than 2 levels of subcategories", error.message
+  end
+
+  test "all_investment_contributions_names returns all locale variants" do
+    names = Category.all_investment_contributions_names
+
+    assert_includes names, "Investment Contributions"  # English
+    assert_includes names, "Contributions aux investissements"  # French
+    assert_includes names, "Investeringsbijdragen"  # Dutch
+    assert names.all? { |name| name.is_a?(String) }
+    assert_equal names, names.uniq  # No duplicates
+  end
+
+  test "should accept valid 6-digit hex colors" do
+    [ "#FFFFFF", "#000000", "#123456", "#ABCDEF", "#abcdef" ].each do |color|
+      category = Category.new(name: "Category #{color}", color: color, lucide_icon: "shapes", family: @family)
+      assert category.valid?, "#{color} should be valid"
+    end
+  end
+
+  test "should reject invalid colors" do
+    [ "invalid", "#123", "#1234567", "#GGGGGG", "red", "ffffff", "#ffff", "" ].each do |color|
+      category = Category.new(name: "Category #{color}", color: color, lucide_icon: "shapes", family: @family)
+      assert_not category.valid?, "#{color} should be invalid"
+      assert_includes category.errors[:color], "is invalid"
+    end
   end
 end

@@ -2,6 +2,8 @@
 de:
   layouts:
     application:
+      privacy_mode: Datenschutzmodus umschalten
+      skip_to_main: Zum Hauptinhalt springen
       nav:
         assistant: Assistent
         budgets: Budgets
@@ -18,3 +20,7 @@ de:
       footer:
         privacy_policy: Datenschutzrichtlinie
         terms_of_service: Nutzungsbedingungen
+    trial:
+      open_demo: Offene Demo
+      data_deleted_in_days: Daten werden in %{days} Tagen gelöscht
+      contribute: Beitragen

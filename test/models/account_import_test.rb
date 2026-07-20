@@ -7,6 +7,38 @@ class AccountImportTest < ActiveSupport::TestCase
     @subject = @import = imports(:account)
   end
 
+  test "csv_template uses ISO dates" do
+    first_row = @import.csv_template.first
+
+    assert_equal "2024-01-01", first_row["Balance Date"]
+  end
+
+  test "generates rows from legacy account export headers with template labels" do
+    import_csv = <<~CSV
+      id,name,type,subtype,balance,currency,created_at
+      account-1,Main Checking,Depository,checking,1000.00,USD,2024-01-01T00:00:00Z
+    CSV
+
+    @import.update!(
+      raw_file_str: import_csv,
+      entity_type_col_label: "Account type*",
+      name_col_label: "Name*",
+      amount_col_label: "Balance*",
+      currency_col_label: "Currency",
+      date_col_label: "Balance Date",
+      date_format: "%Y-%m-%d"
+    )
+
+    @import.generate_rows_from_csv
+    row = @import.rows.reload.first
+
+    assert row.valid?
+    assert_equal "Depository", row.entity_type
+    assert_equal "Main Checking", row.name
+    assert_equal "1000.00", row.amount
+    assert row.date.blank?
+  end
+
   test "import creates accounts with valuations" do
     import_csv = <<~CSV
       type,name,amount,currency,opening_date
@@ -20,7 +52,8 @@ class AccountImportTest < ActiveSupport::TestCase
       name_col_label: "name",
       amount_col_label: "amount",
       currency_col_label: "currency",
-      opening_date_col_label: "opening_date"
+      date_col_label: "opening_date",
+      date_format: "%Y-%m-%d"
     )
 
     @import.generate_rows_from_csv
@@ -68,8 +101,95 @@ class AccountImportTest < ActiveSupport::TestCase
     end
   end
 
-  test "column_keys returns expected keys" do
-    assert_equal %i[entity_type name amount currency opening_date], @import.column_keys
+  test "import creates accounts with explicit balance dates" do
+    import_csv = <<~CSV
+      type,name,amount,currency,date
+      depository,Main Checking,1000.00,USD,01/15/2024
+      depository,Savings Account,5000.00,USD,02/01/2024
+    CSV
+
+    @import.update!(
+      raw_file_str: import_csv,
+      entity_type_col_label: "type",
+      name_col_label: "name",
+      amount_col_label: "amount",
+      currency_col_label: "currency",
+      date_col_label: "date",
+      date_format: "%m/%d/%Y"
+    )
+
+    @import.generate_rows_from_csv
+
+    # Create mappings for account types
+    @import.mappings.create! key: "depository", value: "Depository", type: "Import::AccountTypeMapping"
+
+    @import.reload
+
+    # Perform the import
+    @import.publish
+
+    # Check if import succeeded
+    if @import.failed?
+      fail "Import failed with error: #{@import.error}"
+    end
+
+    assert_equal "complete", @import.status
+
+    # Verify accounts were created with correct dates
+    accounts = @import.accounts.order(:name)
+
+    checking_account = accounts.find { |a| a.name == "Main Checking" }
+    savings_account = accounts.find { |a| a.name == "Savings Account" }
+
+    checking_valuation = checking_account.valuations.opening_anchor.first
+    savings_valuation = savings_account.valuations.opening_anchor.first
+
+    assert_equal Date.parse("2024-01-15"), checking_valuation.entry.date
+    assert_equal Date.parse("2024-02-01"), savings_valuation.entry.date
+  end
+
+  test "import creates accounts with default dates when date column not provided" do
+    import_csv = <<~CSV
+      type,name,amount,currency
+      depository,Main Checking,1000.00,USD
+    CSV
+
+    @import.update!(
+      raw_file_str: import_csv,
+      entity_type_col_label: "type",
+      name_col_label: "name",
+      amount_col_label: "amount",
+      currency_col_label: "currency"
+    )
+
+    @import.generate_rows_from_csv
+
+    # Create mappings for account types
+    @import.mappings.create! key: "depository", value: "Depository", type: "Import::AccountTypeMapping"
+
+    @import.reload
+
+    # Perform the import
+    @import.publish
+
+    # Check if import succeeded
+    if @import.failed?
+      fail "Import failed with error: #{@import.error}"
+    end
+
+    assert_equal "complete", @import.status
+
+    # Verify account was created with default date (2 years ago or 1 day before oldest entry)
+    account = @import.accounts.first
+    valuation = account.valuations.opening_anchor.first
+
+    # Default date should be 2 years ago when there are no other entries
+    expected_default_date = 2.years.ago.to_date
+    assert_equal expected_default_date, valuation.entry.date
+  end
+
+  test "column_keys returns expected keys including date" do
+    assert_equal %i[entity_type name amount currency date], @import.column_keys
   end
 
   test "required_column_keys returns expected keys" do
@@ -82,6 +202,7 @@ class AccountImportTest < ActiveSupport::TestCase
 
   test "dry_run returns expected counts" do
     @import.rows.create!(
+      source_row_number: 1,
       entity_type: "depository",
       name: "Test Account",
       amount: "1000.00",

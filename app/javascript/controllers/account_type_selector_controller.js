@@ -18,7 +18,8 @@ export default class extends Controller {
     // Hide all subtype selects
     const subtypeSelects = container.querySelectorAll('.subtype-select')
     subtypeSelects.forEach(select => {
-      select.style.display = 'none'
+      select.classList.add('hidden')
+      select.style.removeProperty('display')
       // Clear the name attribute so it doesn't get submitted
       const selectElement = select.querySelector('select')
       if (selectElement) {
@@ -34,11 +35,35 @@ export default class extends Controller {
     // Show the relevant subtype select
     const relevantSubtype = container.querySelector(`[data-type="${selectedType}"]`)
     if (relevantSubtype) {
-      relevantSubtype.style.display = 'block'
+      relevantSubtype.classList.remove('hidden')
+      relevantSubtype.style.removeProperty('display')
       // Re-add the name attribute so it gets submitted
       const selectElement = relevantSubtype.querySelector('select')
       if (selectElement) {
         selectElement.setAttribute('name', `account_subtypes[${accountId}]`)
+      }
+    }
+  }
+
+  clearWarning(event) {
+    // When user selects a subtype value, clear all warning styling
+    const select = event.target
+    if (select.value) {
+      // Clear the subtype dropdown warning
+      const warningContainer = select.closest('.ring-2')
+      if (warningContainer) {
+        warningContainer.classList.remove('ring-2', 'ring-warning/50', 'rounded-md', 'p-2', '-m-2')
+        const warningText = warningContainer.querySelector('.text-warning')
+        if (warningText) {
+          warningText.remove()
+        }
+      }
+
+      // Clear the parent card's warning border
+      const card = this.element.closest('.border-2.border-warning')
+      if (card) {
+        card.classList.remove('border-2', 'border-warning', 'bg-warning/5')
+        card.classList.add('border', 'border-primary')
       }
     }
   }
