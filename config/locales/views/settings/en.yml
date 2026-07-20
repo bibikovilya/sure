@@ -401,6 +401,7 @@ en:
         sophtron: Connect US & Canadian banks and utilities.
         plaid: Connect thousands of US financial institutions via Plaid.
         plaid_eu: Connect European financial institutions via Plaid (PSD2 / Open Banking).
+        priorbank: Sync Belarusian Priorbank accounts via browser automation.
       search_filters:
         aria_label: Search providers
         placeholder: Search providers

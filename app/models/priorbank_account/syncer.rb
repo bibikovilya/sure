@@ -15,6 +15,7 @@ class PriorbankAccount::Syncer
 
       calculate_and_save_window
       csv_data = fetch_transactions
+      store_statement(csv_data)
       parsed_data = parse_csv(csv_data)
       update_current_balance(parsed_data[:account_details])
       records = build_transactions(parsed_data[:transactions])
@@ -60,6 +61,35 @@ class PriorbankAccount::Syncer
       data = sync.data || {}
       data[key] = value
       sync.update(data: data)
+    end
+
+    def store_statement(csv_data)
+      sync_step_update("store_statement", "Storing CSV statement in vault...")
+
+      start_label = sync.window_start_date&.strftime("%Y%m%d") || "unknown"
+      end_label   = sync.window_end_date&.strftime("%Y%m%d") || "unknown"
+      filename    = "priorbank_#{account.currency}_#{start_label}_#{end_label}.csv"
+
+      prepared = AccountStatement::PreparedUpload.new(
+        content:        csv_data,
+        filename:       filename,
+        content_type:   "text/csv",
+        byte_size:      csv_data.bytesize,
+        checksum:       Digest::MD5.base64digest(csv_data),
+        content_sha256: Digest::SHA256.hexdigest(csv_data)
+      )
+
+      AccountStatement.create_from_prepared_upload!(
+        family:          account.family,
+        account:         account,
+        prepared_upload: prepared
+      )
+
+      sync_step_update("store_statement", "Statement stored in vault: #{filename}", "success")
+    rescue AccountStatement::DuplicateUploadError
+      sync_step_update("store_statement", "Statement already in vault (duplicate), skipping", "success")
+    rescue => e
+      sync_step_update("store_statement", "Statement vault storage failed: #{e.message}", "error")
     end
 
     def fetch_transactions

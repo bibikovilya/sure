@@ -196,7 +196,8 @@ class Settings::ProvidersController < ApplicationController
       { key: "snaptrade",      title: "SnapTrade",       turbo_id: "snaptrade",      partial: "snaptrade_panel", auto_open: "manage" },
       { key: "ibkr",           title: "Interactive Brokers", turbo_id: "ibkr",      partial: "ibkr_panel" },
       { key: "indexa_capital", title: "Indexa Capital",  turbo_id: "indexa_capital", partial: "indexa_capital_panel" },
-      { key: "sophtron",       title: "Sophtron",        turbo_id: "sophtron",       partial: "sophtron_panel" }
+      { key: "sophtron",       title: "Sophtron",        turbo_id: "sophtron",       partial: "sophtron_panel" },
+      { key: "priorbank",      title: "Priorbank",       turbo_id: "priorbank",      partial: "priorbank_panel" }
     ].freeze
 
     FAMILY_PANEL_KEYS = FAMILY_PANELS.map { |p| p[:key] }.freeze
@@ -217,7 +218,8 @@ class Settings::ProvidersController < ApplicationController
       "snaptrade"      => "SnaptradeItem",
       "ibkr"           => "IbkrItem",
       "indexa_capital" => "IndexaCapitalItem",
-      "sophtron"       => "SophtronItem"
+      "sophtron"       => "SophtronItem",
+      "priorbank"      => "PriorbankItem"
     }.freeze
 
     def load_provider_items(provider_key)
@@ -252,6 +254,8 @@ class Settings::ProvidersController < ApplicationController
         @indexa_capital_items = Current.family.indexa_capital_items.ordered
       when "sophtron"
         @sophtron_items = Current.family.sophtron_items.ordered
+      when "priorbank"
+        @priorbank_items = Current.family.priorbank_items.ordered
       end
     end
 
@@ -283,7 +287,6 @@ class Settings::ProvidersController < ApplicationController
 
       # Priorbank items (fork-specific panel)
       @priorbank_items = Current.family.priorbank_items.ordered
-      @priorbank_item = PriorbankItem.new
 
       @provider_sync_health = compute_provider_sync_health(family_panel_items)
 

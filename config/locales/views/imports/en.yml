@@ -393,7 +393,6 @@ en:
       import_actual: Import from Actual Budget
       import_portfolio: Import investments
       import_rules: Import rules
-      import_transactions_prior: Import transactions from Prior Bank
       import_transactions: Import transactions
       import_qif: Import from Quicken (QIF)
       import_sure: Import from Sure
