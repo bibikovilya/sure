@@ -230,6 +230,8 @@ GEM
       addressable (~> 2.5)
       base64 (~> 0.2)
       concurrent-ruby (~> 1.1)
+      webrick (~> 1.7)
+      websocket-driver (~> 0.7)
     ffi (1.17.2-aarch64-linux-gnu)
     ffi (1.17.2-aarch64-linux-musl)
     ffi (1.17.2-arm-linux-gnu)
@@ -968,7 +970,7 @@ DEPENDENCIES
   webrick
 
 RUBY VERSION
-   ruby 3.4.7p58
+   ruby 3.4.9p82
 
 BUNDLED WITH
    2.6.7
